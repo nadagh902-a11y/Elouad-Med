@@ -472,6 +472,7 @@ export default function App() {
                   affaire={selectedAffaire}
                   catalog={catalog}
                   onChange={updateAffaire}
+                  onAddCatalogItem={upsertCatalogItem}
                   onPrint={() => handleOpenPrint('devis', undefined, true)}
                 />
               )}

@@ -39,6 +39,7 @@ export type PrintDocType =
   | 'dgd'
   | 'delai'
   | 'pv'
+  | 'materiel'
   | 'dechets';
 
 interface PrintPreviewViewProps {
@@ -59,6 +60,7 @@ const DOC_FILE_PREFIX: Record<PrintDocType, string> = {
   dgd: 'Decompte_General_Definitif_DGD',
   delai: 'Fiche_Delai_Execution',
   pv: 'PV_Reception_Provisoire',
+  materiel: 'Fiche_Controle_Materiel',
   dechets: 'Annexe1_Depose_Dechets',
 };
 
@@ -298,6 +300,7 @@ export const PrintPreviewView: React.FC<PrintPreviewViewProps> = ({
                   ['dgd', 'Décompte (DGD)'],
                   ['delai', 'Fiche de Délai'],
                   ['pv', 'PV Réception Provisoire'],
+                  ['materiel', 'Contrôle Matériel'],
                   ['dechets', 'Dépose Déchets (Annexe 1)'],
                 ] as const
               ).map(([key, label]) => (
@@ -1221,6 +1224,203 @@ export const PrintPreviewView: React.FC<PrintPreviewViewProps> = ({
               <div className="mt-20 text-[10px] text-slate-700">
                 (*) La hiéarchie détentrice du pouvoir d&apos;engagement
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* FICHE DE CONTROLE MATERIEL ELECTRICITE */}
+        {docType === 'materiel' && (
+          <div className="space-y-4 text-slate-950">
+            <div className="my-4 text-center">
+              <h2 className="text-lg font-bold tracking-wide uppercase underline underline-offset-4">
+                FICHE DE CONTROLE MATERIEL ELECTRICITE
+              </h2>
+            </div>
+
+            <div className="text-xs space-y-1 mb-4">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                <div>
+                  <span className="font-semibold">Affaire N° :</span>{' '}
+                  <span className="font-mono">{affaire.numeroAffaire}</span>
+                </div>
+                <div>
+                  <span className="font-semibold">Marché / Commande N° :</span>{' '}
+                  <span className="font-mono">
+                    {affaire.marcheNumero || '—'}
+                    {affaire.marcheDate
+                      ? ` du ${formatDateFR(affaire.marcheDate)}`
+                      : ''}
+                  </span>
+                </div>
+                <div className="col-span-2">
+                  <span className="font-semibold">Objet :</span>{' '}
+                  <span className="font-semibold">{affaire.objet}</span>
+                </div>
+                <div>
+                  <span className="font-semibold">Lieux des Travaux :</span>{' '}
+                  {affaire.lieuTravaux || `${affaire.commune} / ${affaire.wilaya}`}
+                </div>
+                <div>
+                  <span className="font-semibold">Entreprise :</span>{' '}
+                  <span className="font-bold uppercase">
+                    {affaire.entreprise || '—'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <table className="w-full border-collapse border border-slate-900 text-[11px]">
+              <thead>
+                <tr className="bg-slate-100 font-bold">
+                  <th className="border border-slate-900 py-1.5 px-1.5 text-center w-9">
+                    N°
+                  </th>
+                  <th className="border border-slate-900 py-1.5 px-2 text-left">
+                    Désignation du matériel
+                  </th>
+                  <th className="border border-slate-900 py-1.5 px-2 text-left">
+                    Fabricant / Distributeur
+                  </th>
+                  <th className="border border-slate-900 py-1.5 px-2 text-left">
+                    N° Facture d&apos;achat
+                  </th>
+                  <th className="border border-slate-900 py-1.5 px-2 text-center w-24">
+                    Date facture
+                  </th>
+                  <th className="border border-slate-900 py-1.5 px-2.5 text-left w-36">
+                    Types de contrôle
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({
+                  length: Math.max(6, affaire.materialControls.length),
+                }).map((_, idx) => {
+                  const mc = affaire.materialControls[idx];
+                  const renderCheckSquare = (checked: boolean, isEmptyRow = false) => (
+                    <span
+                      style={{
+                        WebkitPrintColorAdjust: 'exact',
+                        printColorAdjust: 'exact',
+                      }}
+                      className={`inline-flex items-center justify-center w-3.5 h-3.5 rounded-[2px] border-[1.5px] shrink-0 ${
+                        checked
+                          ? 'bg-blue-700 border-blue-700 text-white'
+                          : isEmptyRow
+                            ? 'bg-white border-slate-500'
+                            : 'bg-white border-slate-800'
+                      }`}
+                    >
+                      {checked && <Check className="h-2.5 w-2.5 stroke-[3]" />}
+                    </span>
+                  );
+
+                  const renderStackedControls = (
+                    visuel: boolean,
+                    marquage: boolean,
+                    dimensionnel: boolean,
+                    isEmptyRow = false
+                  ) => (
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        {renderCheckSquare(visuel, isEmptyRow)}
+                        <span className="text-[10px] leading-none">Visuel</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {renderCheckSquare(marquage, isEmptyRow)}
+                        <span className="text-[10px] leading-none">Marquage</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {renderCheckSquare(dimensionnel, isEmptyRow)}
+                        <span className="text-[10px] leading-none">Dimensionnel</span>
+                      </div>
+                    </div>
+                  );
+
+                  if (!mc) {
+                    return (
+                      <tr key={`empty-mc-${idx}`}>
+                        <td className="border border-slate-900 py-1.5 px-1.5 text-center text-slate-400 num-cell align-middle">
+                          {idx + 1}
+                        </td>
+                        <td className="border border-slate-900 py-1.5 px-2">&nbsp;</td>
+                        <td className="border border-slate-900 py-1.5 px-2">&nbsp;</td>
+                        <td className="border border-slate-900 py-1.5 px-2">&nbsp;</td>
+                        <td className="border border-slate-900 py-1.5 px-2">&nbsp;</td>
+                        <td className="border border-slate-900 py-1.5 px-2.5 align-middle">
+                          {renderStackedControls(false, false, false, true)}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  const fabDist = [mc.fabricant, mc.distributeur]
+                    .filter((v, i, arr) => v && (i === 0 || v !== arr[0]))
+                    .join(' / ');
+                  return (
+                    <tr key={mc.id}>
+                      <td className="border border-slate-900 py-1.5 px-1.5 text-center num-cell align-middle">
+                        {idx + 1}
+                      </td>
+                      <td className="border border-slate-900 py-1.5 px-2 font-medium align-middle">
+                        {mc.designation}
+                      </td>
+                      <td className="border border-slate-900 py-1.5 px-2 align-middle">
+                        {fabDist || '—'}
+                      </td>
+                      <td className="border border-slate-900 py-1.5 px-2 font-mono align-middle">
+                        {mc.factureAchat || '—'}
+                      </td>
+                      <td className="border border-slate-900 py-1.5 px-2 text-center font-mono align-middle">
+                        {formatDateFR(mc.dateFacture)}
+                      </td>
+                      <td className="border border-slate-900 py-1.5 px-2.5 align-middle">
+                        {renderStackedControls(
+                          mc.controleVisuel,
+                          mc.controleMarquage,
+                          mc.controleDimensionnel
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            <div className="pt-8 print-avoid-break">
+              <table className="w-full border-collapse border border-slate-900 text-xs text-center">
+                <thead>
+                  <tr className="bg-slate-50">
+                    <th className="border border-slate-900 py-1.5 px-2 w-1/4">
+                      L&apos;Entreprise
+                    </th>
+                    <th className="border border-slate-900 py-1.5 px-2 w-1/4">
+                      Le Surveillant Travaux
+                    </th>
+                    <th className="border border-slate-900 py-1.5 px-2 w-1/4">
+                      Le Contrôleur Travaux
+                    </th>
+                    <th className="border border-slate-900 py-1.5 px-2 w-1/4">
+                      Le Chef de Service
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="border border-slate-900 py-8 px-2 align-top font-medium">
+                      {affaire.entreprise}
+                    </td>
+                    <td className="border border-slate-900 py-8 px-2 align-top">
+                      {affaire.signatories.surveillantTravaux}
+                    </td>
+                    <td className="border border-slate-900 py-8 px-2 align-top">
+                      {affaire.signatories.controleurTravaux}
+                    </td>
+                    <td className="border border-slate-900 py-8 px-2 align-top">
+                      {affaire.signatories.chefService}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         )}

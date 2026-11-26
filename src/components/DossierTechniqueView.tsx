@@ -29,7 +29,7 @@ const SUBTAB_TO_PRINT_DOC: Record<SubTab, PrintDocType> = {
   identite: 'devis',
   delai: 'delai',
   pv: 'pv',
-  materiel: 'dechets',
+  materiel: 'materiel',
   aft: 'aft',
   dgd: 'dgd',
 };
@@ -38,7 +38,7 @@ const SUBTAB_PRINT_LABEL: Record<SubTab, string> = {
   identite: 'Imprimer Fiche Étude',
   delai: 'Imprimer Fiche Délai',
   pv: 'Imprimer PV Réception',
-  materiel: 'Imprimer Annexe 1 Déchets',
+  materiel: 'Imprimer Contrôle Matériel',
   aft: 'Imprimer AFT',
   dgd: 'Imprimer DGD',
 };
@@ -1144,7 +1144,7 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
         <div className="space-y-6">
           {/* Fiche de contrôle matériel */}
           <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-slate-900">
                   Fiche de Contrôle Matériel Électricité
@@ -1153,14 +1153,26 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                   Traçabilité des matériels agréés, fabricants, factures d&apos;achat et types de contrôle.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={addMaterialControl}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg cursor-pointer"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Ajouter matériel
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {onPrintDoc && (
+                  <button
+                    type="button"
+                    onClick={() => onPrintDoc('materiel')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg cursor-pointer"
+                  >
+                    <Printer className="h-3.5 w-3.5 text-blue-700" />
+                    Imprimer Contrôle Matériel
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={addMaterialControl}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Ajouter matériel
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -1170,9 +1182,7 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                     <th className="py-2.5 px-3">Fabricant / Distributeur</th>
                     <th className="py-2.5 px-3">N° Facture d&apos;achat</th>
                     <th className="py-2.5 px-3">Date facture</th>
-                    <th className="py-2.5 px-3 text-center">Visuel</th>
-                    <th className="py-2.5 px-3 text-center">Marquage</th>
-                    <th className="py-2.5 px-3 text-center">Dimensionnel</th>
+                    <th className="py-2.5 px-3 min-w-[150px]">Types de contrôle</th>
                     <th className="py-2.5 px-3 w-12"></th>
                   </tr>
                 </thead>
@@ -1180,7 +1190,7 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                   {affaire.materialControls.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={8}
+                        colSpan={6}
                         className="py-8 text-center text-slate-500"
                       >
                         Aucun matériel contrôlé enregistré.
@@ -1189,7 +1199,7 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                   ) : (
                     affaire.materialControls.map((mc) => (
                       <tr key={mc.id} className="hover:bg-slate-50/70">
-                        <td className="py-2 px-3">
+                        <td className="py-2 px-3 align-top">
                           <input
                             type="text"
                             value={mc.designation}
@@ -1202,7 +1212,7 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                             className="w-full px-2 py-1 border border-slate-200 rounded"
                           />
                         </td>
-                        <td className="py-2 px-3">
+                        <td className="py-2 px-3 align-top">
                           <input
                             type="text"
                             value={mc.fabricant}
@@ -1216,7 +1226,7 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                             className="w-full px-2 py-1 border border-slate-200 rounded"
                           />
                         </td>
-                        <td className="py-2 px-3">
+                        <td className="py-2 px-3 align-top">
                           <input
                             type="text"
                             value={mc.factureAchat}
@@ -1229,7 +1239,7 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                             className="w-full px-2 py-1 font-mono border border-slate-200 rounded"
                           />
                         </td>
-                        <td className="py-2 px-3">
+                        <td className="py-2 px-3 align-top">
                           <input
                             type="date"
                             value={mc.dateFacture}
@@ -1241,43 +1251,50 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                             className="px-2 py-1 font-mono border border-slate-200 rounded"
                           />
                         </td>
-                        <td className="py-2 px-3 text-center">
-                          <input
-                            type="checkbox"
-                            checked={mc.controleVisuel}
-                            onChange={(e) =>
-                              updateMaterialControl(mc.id, {
-                                controleVisuel: e.target.checked,
-                              })
-                            }
-                            className="h-4 w-4 accent-blue-700"
-                          />
+                        <td className="py-2 px-3 align-top">
+                          <div className="flex flex-col gap-1">
+                            <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={mc.controleVisuel}
+                                onChange={(e) =>
+                                  updateMaterialControl(mc.id, {
+                                    controleVisuel: e.target.checked,
+                                  })
+                                }
+                                className="h-4 w-4 accent-blue-700 shrink-0"
+                              />
+                              <span>Visuel</span>
+                            </label>
+                            <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={mc.controleMarquage}
+                                onChange={(e) =>
+                                  updateMaterialControl(mc.id, {
+                                    controleMarquage: e.target.checked,
+                                  })
+                                }
+                                className="h-4 w-4 accent-blue-700 shrink-0"
+                              />
+                              <span>Marquage</span>
+                            </label>
+                            <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={mc.controleDimensionnel}
+                                onChange={(e) =>
+                                  updateMaterialControl(mc.id, {
+                                    controleDimensionnel: e.target.checked,
+                                  })
+                                }
+                                className="h-4 w-4 accent-blue-700 shrink-0"
+                              />
+                              <span>Dimensionnel</span>
+                            </label>
+                          </div>
                         </td>
-                        <td className="py-2 px-3 text-center">
-                          <input
-                            type="checkbox"
-                            checked={mc.controleMarquage}
-                            onChange={(e) =>
-                              updateMaterialControl(mc.id, {
-                                controleMarquage: e.target.checked,
-                              })
-                            }
-                            className="h-4 w-4 accent-blue-700"
-                          />
-                        </td>
-                        <td className="py-2 px-3 text-center">
-                          <input
-                            type="checkbox"
-                            checked={mc.controleDimensionnel}
-                            onChange={(e) =>
-                              updateMaterialControl(mc.id, {
-                                controleDimensionnel: e.target.checked,
-                              })
-                            }
-                            className="h-4 w-4 accent-blue-700"
-                          />
-                        </td>
-                        <td className="py-2 px-3 text-right">
+                        <td className="py-2 px-3 text-right align-top">
                           <button
                             type="button"
                             onClick={() => removeMaterialControl(mc.id)}

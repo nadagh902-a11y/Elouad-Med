@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   Download,
+  PenLine,
   Plus,
   Printer,
   Search,
@@ -30,6 +31,7 @@ interface ChiffrageEditorProps {
   affaire: Affaire;
   catalog: CatalogItem[];
   onChange: (updated: Affaire) => void;
+  onAddCatalogItem?: (item: CatalogItem) => void;
   onPrint?: () => void;
 }
 
@@ -62,6 +64,7 @@ export const ChiffrageEditor: React.FC<ChiffrageEditorProps> = ({
   affaire,
   catalog,
   onChange,
+  onAddCatalogItem,
   onPrint,
 }) => {
   const [chapterFilter, setChapterFilter] = useState<'ALL' | WorkChapter>('ALL');
@@ -70,6 +73,20 @@ export const ChiffrageEditor: React.FC<ChiffrageEditorProps> = ({
   const [catSearch, setCatSearch] = useState('');
   const [catChapter, setCatChapter] = useState<'ALL' | WorkChapter>('ALL');
   const [selectedCatIds, setSelectedCatIds] = useState<Record<string, boolean>>({});
+
+  // Manual article modal state
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [manualTargetItemId, setManualTargetItemId] = useState<string | null>(null);
+  const [manualChapitre, setManualChapitre] = useState<WorkChapter>('MTA');
+  const [manualRcnTp, setManualRcnTp] = useState<'RCN' | 'TPR'>('RCN');
+  const [manualFamille, setManualFamille] = useState('');
+  const [manualNature, setManualNature] = useState('');
+  const [manualDesignation, setManualDesignation] = useState('');
+  const [manualUnite, setManualUnite] = useState<WorkUnit>('U');
+  const [manualQteFourn, setManualQteFourn] = useState<number>(1);
+  const [manualQteMO, setManualQteMO] = useState<number>(1);
+  const [manualSaveToCatalog, setManualSaveToCatalog] = useState<boolean>(true);
+  const [manualError, setManualError] = useState<string | null>(null);
 
   // Inline designation picker state (portal-positioned to prevent table overflow clipping)
   const [dropdown, setDropdown] = useState<DropdownAnchor | null>(null);
@@ -239,6 +256,101 @@ export const ChiffrageEditor: React.FC<ChiffrageEditorProps> = ({
     setDropdown(null);
   };
 
+  const openManualModal = (prefillItem?: WorkItem, prefillText?: string) => {
+    setDropdown(null);
+    setManualError(null);
+    if (prefillItem) {
+      setManualTargetItemId(prefillItem.id);
+      setManualChapitre(prefillItem.chapitre);
+      setManualRcnTp(prefillItem.rcnTp);
+      setManualFamille(prefillItem.famille);
+      setManualNature(prefillItem.natureOuvrage);
+      setManualDesignation(prefillText ?? prefillItem.designation);
+      setManualUnite(prefillItem.unite);
+      setManualQteFourn(prefillItem.qteDevisFourn);
+      setManualQteMO(prefillItem.qteDevisMO);
+    } else {
+      setManualTargetItemId(null);
+      setManualChapitre(chapterFilter === 'ALL' ? 'MTA' : chapterFilter);
+      setManualRcnTp('RCN');
+      setManualFamille('');
+      setManualNature('');
+      setManualDesignation(prefillText || '');
+      setManualUnite('U');
+      setManualQteFourn(1);
+      setManualQteMO(1);
+    }
+    setManualSaveToCatalog(Boolean(onAddCatalogItem));
+    setShowManualModal(true);
+  };
+
+  const handleSaveManualArticle = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanDesignation = manualDesignation.trim();
+    if (!cleanDesignation) {
+      setManualError('Veuillez saisir la désignation des travaux / ouvrage.');
+      return;
+    }
+
+    const cleanFamille = manualFamille.trim() || 'Article manuel';
+    const cleanNature = manualNature.trim();
+
+    if (manualTargetItemId) {
+      updateItem(manualTargetItemId, {
+        chapitre: manualChapitre,
+        rcnTp: manualRcnTp,
+        famille: cleanFamille,
+        natureOuvrage: cleanNature,
+        designation: cleanDesignation,
+        unite: manualUnite,
+        qteDevisFourn: manualQteFourn,
+        qteDevisMO: manualQteMO,
+      });
+    } else {
+      const newItem: WorkItem = {
+        id: 'it-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+        chapitre: manualChapitre,
+        rcnTp: manualRcnTp,
+        famille: cleanFamille,
+        natureOuvrage: cleanNature,
+        designation: cleanDesignation,
+        unite: manualUnite,
+        qteDevisFourn: manualQteFourn,
+        qteDevisMO: manualQteMO,
+        puFourniture: 0,
+        puMainOeuvre: 0,
+      };
+      onChange({
+        ...affaire,
+        items: [...affaire.items, newItem],
+      });
+    }
+
+    if (manualSaveToCatalog && onAddCatalogItem) {
+      const alreadyExists = catalog.some(
+        (c) =>
+          c.chapitre === manualChapitre &&
+          c.designation.trim().toLowerCase() === cleanDesignation.toLowerCase()
+      );
+      if (!alreadyExists) {
+        onAddCatalogItem({
+          id: 'cat-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+          chapitre: manualChapitre,
+          rcnTp: manualRcnTp,
+          famille: cleanFamille,
+          natureOuvrage: cleanNature,
+          designation: cleanDesignation,
+          unite: manualUnite,
+          puFourniture: 0,
+          puMainOeuvre: 0,
+        });
+      }
+    }
+
+    setShowManualModal(false);
+    setManualTargetItemId(null);
+  };
+
   const addEmptyItem = () => {
     const newItem: WorkItem = {
       id: 'it-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
@@ -378,6 +490,14 @@ export const ChiffrageEditor: React.FC<ChiffrageEditorProps> = ({
           </button>
           <button
             type="button"
+            onClick={() => openManualModal()}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <PenLine className="h-3.5 w-3.5" />
+            Ajouter article manuellement
+          </button>
+          <button
+            type="button"
             onClick={addEmptyItem}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 whitespace-nowrap shrink-0 cursor-pointer"
           >
@@ -395,9 +515,9 @@ export const ChiffrageEditor: React.FC<ChiffrageEditorProps> = ({
               Aucun poste dans cette fiche de consistance / devis quantitatif.
             </p>
             <p className="mt-1 text-sm text-slate-500">
-              Ajoutez des ouvrages depuis la Bibliothèque ou créez une ligne manuellement.
+              Ajoutez des ouvrages depuis la Bibliothèque ou saisissez un article manuellement.
             </p>
-            <div className="mt-4 flex items-center justify-center gap-3">
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
               <button
                 type="button"
                 onClick={() => setShowCatalogModal(true)}
@@ -405,6 +525,14 @@ export const ChiffrageEditor: React.FC<ChiffrageEditorProps> = ({
               >
                 <BookOpen className="h-4 w-4" />
                 Ouvrir la Bibliothèque
+              </button>
+              <button
+                type="button"
+                onClick={() => openManualModal()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 cursor-pointer"
+              >
+                <PenLine className="h-4 w-4" />
+                Ajouter article manuellement
               </button>
               <button
                 type="button"
@@ -429,7 +557,19 @@ export const ChiffrageEditor: React.FC<ChiffrageEditorProps> = ({
                       <th className="py-2.5 px-2 min-w-[160px]">Famille / Nature d&apos;ouvrage</th>
                     </>
                   )}
-                  <th className="py-2.5 px-2 min-w-[260px]">Désignation des Travaux / Ouvrage</th>
+                  <th className="py-2.5 px-2 min-w-[280px]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span>Désignation des Travaux / Ouvrage</span>
+                      <button
+                        type="button"
+                        onClick={() => openManualModal()}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded hover:bg-emerald-100 cursor-pointer whitespace-nowrap"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Article manuel
+                      </button>
+                    </div>
+                  </th>
                   <th className="py-2.5 px-2 min-w-[96px] w-24 text-center">Unité</th>
                   <th className="py-2.5 px-2 min-w-[132px] w-32 text-right">Qté Devis Fourn.</th>
                   <th className="py-2.5 px-2 min-w-[132px] w-32 text-right">Qté Devis M.O.</th>
@@ -782,10 +922,23 @@ export const ChiffrageEditor: React.FC<ChiffrageEditorProps> = ({
               </table>
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between bg-slate-50">
-              <span className="text-xs font-medium text-slate-600">
-                {selectedCount} ouvrage{selectedCount > 1 ? 's' : ''} sélectionné{selectedCount > 1 ? 's' : ''}
-              </span>
+            <div className="px-6 py-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium text-slate-600">
+                  {selectedCount} ouvrage{selectedCount > 1 ? 's' : ''} sélectionné{selectedCount > 1 ? 's' : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCatalogModal(false);
+                    openManualModal(undefined, catSearch.trim());
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 cursor-pointer"
+                >
+                  <PenLine className="h-3.5 w-3.5" />
+                  Ajouter un article manuellement
+                </button>
+              </div>
               <div className="flex items-center gap-3">
                 <button
                   type="button"
@@ -804,6 +957,189 @@ export const ChiffrageEditor: React.FC<ChiffrageEditorProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Article Creation Modal */}
+      {showManualModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-xl shadow-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">
+                  Ajouter un article manuellement
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Créez une désignation personnalisée pour cette affaire et enregistrez-la si besoin dans la bibliothèque.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowManualModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveManualArticle} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Désignation des Travaux / Ouvrage <span className="text-red-600">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={manualDesignation}
+                  onChange={(e) => setManualDesignation(e.target.value)}
+                  placeholder="Ex : Pose câble souterrain HTA 1x240 mm² Alu..."
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Chapitre
+                  </label>
+                  <select
+                    value={manualChapitre}
+                    onChange={(e) => setManualChapitre(e.target.value as WorkChapter)}
+                    className="w-full px-2.5 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                  >
+                    {CHAPTERS.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    RCN / TPR
+                  </label>
+                  <select
+                    value={manualRcnTp}
+                    onChange={(e) => setManualRcnTp(e.target.value as 'RCN' | 'TPR')}
+                    className="w-full px-2.5 py-2 text-sm border border-slate-200 rounded-lg bg-white font-mono"
+                  >
+                    <option value="RCN">RCN</option>
+                    <option value="TPR">TPR</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Unité
+                  </label>
+                  <select
+                    value={manualUnite}
+                    onChange={(e) => setManualUnite(e.target.value as WorkUnit)}
+                    className="w-full px-2.5 py-2 text-sm border border-slate-200 rounded-lg bg-white font-mono font-semibold"
+                  >
+                    {UNITS.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Famille
+                  </label>
+                  <input
+                    type="text"
+                    value={manualFamille}
+                    onChange={(e) => setManualFamille(e.target.value)}
+                    placeholder="Ex : Raccordement HTA, Génie Civil..."
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Nature d&apos;ouvrage
+                  </label>
+                  <input
+                    type="text"
+                    value={manualNature}
+                    onChange={(e) => setManualNature(e.target.value)}
+                    placeholder="Ex : Réseau souterrain, Poste..."
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Qté Devis Fourniture
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={manualQteFourn}
+                    onChange={(e) =>
+                      setManualQteFourn(parseFloat(e.target.value) || 0)
+                    }
+                    className="w-full px-3 py-2 text-sm num-cell border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Qté Devis Main d&apos;Œuvre (M.O.)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={manualQteMO}
+                    onChange={(e) =>
+                      setManualQteMO(parseFloat(e.target.value) || 0)
+                    }
+                    className="w-full px-3 py-2 text-sm num-cell border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+              </div>
+
+              {onAddCatalogItem && (
+                <label className="flex items-center gap-2 text-xs text-slate-700 pt-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={manualSaveToCatalog}
+                    onChange={(e) => setManualSaveToCatalog(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-700"
+                  />
+                  Enregistrer aussi cet article dans la Bibliothèque des Ouvrages (pour les prochaines affaires)
+                </label>
+              )}
+
+              {manualError && (
+                <p className="text-xs font-medium text-red-600">{manualError}</p>
+              )}
+
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowManualModal(false)}
+                  className="px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 rounded-lg cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-lg cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {manualTargetItemId ? 'Valider cet article' : 'Ajouter au devis'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -922,6 +1258,32 @@ export const ChiffrageEditor: React.FC<ChiffrageEditorProps> = ({
                     </button>
                   );
                 })
+              )}
+            </div>
+            <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() =>
+                  openManualModal(
+                    activeDropdownItem,
+                    activeDropdownItem.designation
+                  )
+                }
+                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 hover:text-emerald-900 hover:underline cursor-pointer"
+              >
+                <PenLine className="h-3 w-3" />
+                {activeDropdownItem.designation.trim()
+                  ? 'Compléter / enregistrer cet article manuellement'
+                  : 'Saisir un nouvel article manuellement...'}
+              </button>
+              {activeDropdownItem.designation.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setDropdown(null)}
+                  className="px-2 py-0.5 text-[11px] font-medium text-slate-700 bg-white border border-slate-200 rounded hover:bg-slate-100 cursor-pointer whitespace-nowrap"
+                >
+                  Valider saisie libre
+                </button>
               )}
             </div>
           </div>,
