@@ -1,5 +1,15 @@
-import React, { useMemo, useState } from 'react';
-import { Printer } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Check,
+  Copy,
+  Download,
+  ExternalLink,
+  FileText,
+  Loader2,
+  Printer,
+  SlidersHorizontal,
+  X,
+} from 'lucide-react';
 import { Affaire, AppSettings } from '../types/project';
 import {
   computeAffairePhysicalStats,
@@ -8,22 +18,237 @@ import {
   formatDatePVLetters,
   formatNumber,
 } from '../utils/formatters';
+import {
+  applyDynamicPrintPageCss,
+  ColorMode,
+  createPdfBlobUrl,
+  createPrintableHtmlBlobUrl,
+  exportSheetToPdf,
+  isEmbeddedIframe,
+  MarginPreset,
+  PaperFormat,
+  PrintOptions,
+  PrintOrientation,
+  triggerNativePrint,
+} from '../utils/pdfExport';
+
+export type PrintDocType =
+  | 'devis'
+  | 'attachement'
+  | 'aft'
+  | 'dgd'
+  | 'delai'
+  | 'pv'
+  | 'dechets';
 
 interface PrintPreviewViewProps {
   affaire: Affaire;
   settings: AppSettings;
+  initialDocType?: PrintDocType;
+  initialSitId?: string;
+  autoPrintSignal?: number;
+  onDocTypeChange?: (doc: PrintDocType) => void;
 }
 
-type DocType = 'devis' | 'attachement' | 'aft' | 'dgd' | 'delai' | 'pv';
+const LOGO_URL = '/assets/aistudio/LOGO__00bdc765.jpeg';
+
+const DOC_FILE_PREFIX: Record<PrintDocType, string> = {
+  devis: 'Devis_Consistances',
+  attachement: 'Feuille_Attachement',
+  aft: 'Avis_Fin_Travaux_AFT',
+  dgd: 'Decompte_General_Definitif_DGD',
+  delai: 'Fiche_Delai_Execution',
+  pv: 'PV_Reception_Provisoire',
+  dechets: 'Annexe1_Depose_Dechets',
+};
 
 export const PrintPreviewView: React.FC<PrintPreviewViewProps> = ({
   affaire,
   settings,
+  initialDocType,
+  initialSitId,
+  autoPrintSignal = 0,
+  onDocTypeChange,
 }) => {
-  const [docType, setDocType] = useState<DocType>('attachement');
-  const [selectedSitId, setSelectedSitId] = useState<string>(
-    affaire.attachements[0]?.id || ''
+  const [docType, setDocType] = useState<PrintDocType>(
+    initialDocType || 'attachement'
   );
+  const [selectedSitId, setSelectedSitId] = useState<string>(
+    initialSitId || affaire.attachements[0]?.id || ''
+  );
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [showOptionsBar, setShowOptionsBar] = useState(true);
+  const [showPrinterModal, setShowPrinterModal] = useState(false);
+  const [printOptions, setPrintOptions] = useState<PrintOptions>({
+    paperFormat: 'a4',
+    orientation:
+      (initialDocType || 'attachement') === 'dechets'
+        ? 'landscape'
+        : 'portrait',
+    margins: 'normal',
+    scalePct: 100,
+    colorMode: 'color',
+  });
+  const [printableBlobUrl, setPrintableBlobUrl] = useState<string | null>(null);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [isPreparingPdfLink, setIsPreparingPdfLink] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const prevBlobUrlRef = useRef<string | null>(null);
+  const prevPdfUrlRef = useRef<string | null>(null);
+  const embedded = useMemo(() => isEmbeddedIframe(), []);
+
+  useEffect(() => {
+    if (initialDocType) {
+      setDocType(initialDocType);
+      setPrintOptions((prev) => ({
+        ...prev,
+        orientation: initialDocType === 'dechets' ? 'landscape' : 'portrait',
+      }));
+    }
+  }, [initialDocType]);
+
+  useEffect(() => {
+    if (initialSitId) {
+      setSelectedSitId(initialSitId);
+    }
+  }, [initialSitId]);
+
+  useEffect(() => {
+    applyDynamicPrintPageCss(printOptions);
+  }, [printOptions]);
+
+  useEffect(() => {
+    return () => {
+      if (prevBlobUrlRef.current) {
+        URL.revokeObjectURL(prevBlobUrlRef.current);
+        prevBlobUrlRef.current = null;
+      }
+      if (prevPdfUrlRef.current) {
+        URL.revokeObjectURL(prevPdfUrlRef.current);
+        prevPdfUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      if (!sheetRef.current) return;
+      try {
+        const title = `${DOC_FILE_PREFIX[docType]} - ${affaire.numeroAffaire}`;
+        const url = await createPrintableHtmlBlobUrl(
+          sheetRef.current,
+          title,
+          printOptions
+        );
+        if (!active) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        if (prevBlobUrlRef.current) {
+          URL.revokeObjectURL(prevBlobUrlRef.current);
+        }
+        prevBlobUrlRef.current = url;
+        setPrintableBlobUrl(url);
+      } catch {
+        // Ignore preview blob errors
+      }
+    }, 60);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [docType, selectedSitId, affaire, settings, printOptions]);
+
+  const preparePdfViewerUrl = async () => {
+    if (!sheetRef.current) return;
+    setIsPreparingPdfLink(true);
+    try {
+      const url = await createPdfBlobUrl(sheetRef.current, printOptions);
+      if (prevPdfUrlRef.current) {
+        URL.revokeObjectURL(prevPdfUrlRef.current);
+      }
+      prevPdfUrlRef.current = url;
+      setPdfBlobUrl(url);
+    } catch {
+      // fallback handled by Download button
+    } finally {
+      setIsPreparingPdfLink(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!autoPrintSignal) return;
+    const timer = window.setTimeout(async () => {
+      const opened = await triggerNativePrint(printOptions);
+      if (!opened) {
+        setShowPrinterModal(true);
+        void preparePdfViewerUrl();
+      }
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [autoPrintSignal]);
+
+  const handleSelectDocType = (next: PrintDocType) => {
+    setDocType(next);
+    setExportError(null);
+    setPdfBlobUrl(null);
+    setPrintOptions((prev) => ({
+      ...prev,
+      orientation: next === 'dechets' ? 'landscape' : 'portrait',
+    }));
+    onDocTypeChange?.(next);
+  };
+
+  const handlePrintNow = async () => {
+    setExportError(null);
+    const opened = await triggerNativePrint(printOptions);
+    if (!opened) {
+      setShowPrinterModal(true);
+      void preparePdfViewerUrl();
+    }
+  };
+
+  const handleOpenPrinterOptionsModal = () => {
+    setShowPrinterModal(true);
+    void preparePdfViewerUrl();
+  };
+
+  const handleCopyAppUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopiedUrl(true);
+      window.setTimeout(() => setCopiedUrl(false), 2000);
+    } catch {
+      // Ignore clipboard failure
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!sheetRef.current) return;
+    setExportError(null);
+    setIsExportingPdf(true);
+    try {
+      const sitSuffix =
+        docType === 'attachement' && selectedSit
+          ? `_N${selectedSit.numero}`
+          : '';
+      const fileName = `${DOC_FILE_PREFIX[docType]}_${affaire.numeroAffaire}${sitSuffix}.pdf`;
+      await exportSheetToPdf(sheetRef.current, fileName, printOptions);
+    } catch (err) {
+      setExportError(
+        err instanceof Error
+          ? err.message
+          : 'Erreur lors de la génération du PDF.'
+      );
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
 
   const stats = useMemo(() => computeAffairePhysicalStats(affaire), [affaire]);
   const delayMetrics = useMemo(() => computeDelayMetrics(affaire), [affaire]);
@@ -31,114 +256,403 @@ export const PrintPreviewView: React.FC<PrintPreviewViewProps> = ({
     affaire.attachements.find((s) => s.id === selectedSitId) ||
     affaire.attachements[0];
 
+  const wilayaLabel = affaire.wilaya
+    ? affaire.wilaya.charAt(0).toUpperCase() +
+      affaire.wilaya.slice(1).toLowerCase()
+    : 'Tlemcen';
+
+  const docNumber =
+    docType === 'aft' && affaire.aftNumero
+      ? affaire.aftNumero
+      : docType === 'dgd' && affaire.dgdNumero
+        ? affaire.dgdNumero
+        : docType === 'pv' && affaire.pvReceptionNumero
+          ? affaire.pvReceptionNumero
+          : affaire.etudeNumero || '...............';
+
+  const docYear =
+    docType === 'attachement' && selectedSit?.date
+      ? selectedSit.date.slice(0, 4)
+      : docType === 'aft' && affaire.aftDate
+        ? affaire.aftDate.slice(0, 4)
+        : docType === 'dgd' && affaire.dgdDate
+          ? affaire.dgdDate.slice(0, 4)
+          : docType === 'pv' && affaire.pvReceptionDate
+            ? affaire.pvReceptionDate.slice(0, 4)
+            : affaire.marcheDate
+              ? affaire.marcheDate.slice(0, 4)
+              : '........';
+
   return (
     <div className="space-y-5">
       {/* Controls bar (hidden on print) */}
-      <div className="no-print bg-white border border-slate-200 rounded-lg p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
-            {(
-              [
-                ['devis', "Fiche d'Étude / Devis"],
-                ['attachement', "Feuille d'Attachement"],
-                ['aft', 'Avis Fin Travaux (AFT)'],
-                ['dgd', 'Décompte (DGD)'],
-                ['delai', 'Fiche de Délai'],
-                ['pv', 'PV Réception Provisoire'],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setDocType(key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  docType === key
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+      <div className="no-print bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
+              {(
+                [
+                  ['devis', "Fiche d'Étude / Devis"],
+                  ['attachement', "Feuille d'Attachement"],
+                  ['aft', 'Avis Fin Travaux (AFT)'],
+                  ['dgd', 'Décompte (DGD)'],
+                  ['delai', 'Fiche de Délai'],
+                  ['pv', 'PV Réception Provisoire'],
+                  ['dechets', 'Dépose Déchets (Annexe 1)'],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => handleSelectDocType(key)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    docType === key
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {docType === 'attachement' && affaire.attachements.length > 0 && (
+              <select
+                value={selectedSit?.id || ''}
+                onChange={(e) => setSelectedSitId(e.target.value)}
+                className="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-lg bg-white"
               >
-                {label}
-              </button>
-            ))}
+                {affaire.attachements.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    Attachement N° {s.numero} ({formatDateFR(s.date)})
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
-          {docType === 'attachement' && affaire.attachements.length > 0 && (
-            <select
-              value={selectedSit?.id || ''}
-              onChange={(e) => setSelectedSitId(e.target.value)}
-              className="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-lg bg-white"
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handlePrintNow}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
             >
-              {affaire.attachements.map((s) => (
-                <option key={s.id} value={s.id}>
-                  Attachement N° {s.numero} ({formatDateFR(s.date)})
-                </option>
-              ))}
-            </select>
-          )}
+              <Printer className="h-4 w-4" />
+              Imprimer ({printOptions.paperFormat.toUpperCase()}{' '}
+              {printOptions.orientation === 'landscape' ? 'Paysage' : 'Portrait'})
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isExportingPdf}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
+            >
+              {isExportingPdf ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              {isExportingPdf ? 'Génération PDF...' : 'Télécharger PDF'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowOptionsBar((v) => !v)}
+              className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border whitespace-nowrap shrink-0 cursor-pointer ${
+                showOptionsBar
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Options imprimante
+            </button>
+            {embedded && (
+              <button
+                type="button"
+                onClick={handleOpenPrinterOptionsModal}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Dialogue imprimante
+              </button>
+            )}
+          </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
-        >
-          <Printer className="h-4 w-4" />
-          Imprimer / Exporter PDF (A4)
-        </button>
+        {/* Visible In-App Printer & Page Options Bar */}
+        {showOptionsBar && (
+          <div className="pt-3 border-t border-slate-200 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 items-end text-xs">
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                Format papier
+              </label>
+              <select
+                value={printOptions.paperFormat}
+                onChange={(e) =>
+                  setPrintOptions((p) => ({
+                    ...p,
+                    paperFormat: e.target.value as PaperFormat,
+                  }))
+                }
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+              >
+                <option value="a4">A4 (210 × 297 mm)</option>
+                <option value="a3">A3 (297 × 420 mm)</option>
+                <option value="letter">Lettre US</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                Orientation
+              </label>
+              <select
+                value={printOptions.orientation}
+                onChange={(e) =>
+                  setPrintOptions((p) => ({
+                    ...p,
+                    orientation: e.target.value as PrintOrientation,
+                  }))
+                }
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+              >
+                <option value="portrait">Portrait</option>
+                <option value="landscape">Paysage</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                Marges
+              </label>
+              <select
+                value={printOptions.margins}
+                onChange={(e) =>
+                  setPrintOptions((p) => ({
+                    ...p,
+                    margins: e.target.value as MarginPreset,
+                  }))
+                }
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+              >
+                <option value="normal">Normales (10 mm)</option>
+                <option value="narrow">Étroites (5 mm)</option>
+                <option value="wide">Larges (16 mm)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                Échelle
+              </label>
+              <select
+                value={printOptions.scalePct}
+                onChange={(e) =>
+                  setPrintOptions((p) => ({
+                    ...p,
+                    scalePct: parseInt(e.target.value, 10) || 100,
+                  }))
+                }
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+              >
+                <option value={80}>80 %</option>
+                <option value={85}>85 %</option>
+                <option value={90}>90 %</option>
+                <option value={95}>95 %</option>
+                <option value={100}>100 % (Réel)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                Couleur
+              </label>
+              <select
+                value={printOptions.colorMode}
+                onChange={(e) =>
+                  setPrintOptions((p) => ({
+                    ...p,
+                    colorMode: e.target.value as ColorMode,
+                  }))
+                }
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+              >
+                <option value="color">Couleur (Logo Sonelgaz)</option>
+                <option value="grayscale">Noir &amp; Blanc</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              {printableBlobUrl && (
+                <a
+                  href={printableBlobUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full text-center px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-lg whitespace-nowrap"
+                >
+                  Onglet imprimable
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+
+        {exportError && (
+          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+            {exportError}
+          </div>
+        )}
       </div>
 
+      {/* Modal Dialogue d'impression si bloqué par le cadre d'aperçu */}
+      {showPrinterModal && (
+        <div className="no-print fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-lg shadow-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Printer className="h-4 w-4 text-blue-700" />
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Ouvrir les options de l&apos;imprimante
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPrinterModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 text-xs text-slate-700">
+              <p className="leading-relaxed">
+                Le cadre d&apos;aperçu web bloque l&apos;ouverture automatique de la fenêtre d&apos;impression par script. Utilisez l&apos;une des <strong>3 méthodes immédiates</strong> ci-dessous pour afficher toutes les options de votre imprimante :
+              </p>
+
+              <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-lg space-y-1">
+                <div className="font-semibold text-blue-950">
+                  1. Raccourci clavier immédiat : <kbd className="px-1.5 py-0.5 bg-white border border-blue-300 rounded font-mono text-[11px]">Ctrl</kbd> + <kbd className="px-1.5 py-0.5 bg-white border border-blue-300 rounded font-mono text-[11px]">P</kbd>
+                </div>
+                <p className="text-blue-900">
+                  Ou faites un <strong>clic droit</strong> sur la fiche ci-dessous puis choisissez <strong>Imprimer...</strong> — la boîte de dialogue complète de votre imprimante s&apos;affichera immédiatement.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                {isPreparingPdfLink ? (
+                  <div className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Préparation du PDF imprimable...
+                  </div>
+                ) : pdfBlobUrl ? (
+                  <a
+                    href={pdfBlobUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-lg"
+                  >
+                    <FileText className="h-4 w-4" />
+                    2. Ouvrir le PDF (avec bouton Imprimer)
+                  </a>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  disabled={isExportingPdf}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-lg cursor-pointer"
+                >
+                  <Download className="h-4 w-4" />
+                  3. Télécharger le PDF
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+                <span>Pour imprimer en 1 clic sans blocage :</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyAppUrl}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded cursor-pointer"
+                  >
+                    {copiedUrl ? <Check className="h-3 w-3 text-emerald-700" /> : <Copy className="h-3 w-3" />}
+                    {copiedUrl ? 'Lien copié' : 'Copier le lien'}
+                  </button>
+                  <a
+                    href={typeof window !== 'undefined' ? window.location.href : '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Ouvrir hors aperçu
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Printable A4 Sheet */}
-      <div className="print-sheet bg-white border border-slate-200 rounded-lg p-8 lg:p-10 max-w-[920px] mx-auto text-slate-950 shadow-xs">
-        {docType !== 'delai' && docType !== 'pv' && (
-          <>
-            {/* Official Header */}
-            <div className="border-b-2 border-slate-900 pb-4 flex items-start justify-between gap-4">
-              <div className="space-y-0.5 text-xs">
-                <div className="font-bold text-sm text-blue-900">
+      <div
+        ref={sheetRef}
+        style={{
+          filter:
+            printOptions.colorMode === 'grayscale'
+              ? 'grayscale(100%)'
+              : undefined,
+        }}
+        className={`print-sheet bg-white border border-slate-200 rounded-lg p-8 lg:p-10 mx-auto text-slate-950 shadow-xs ${
+          printOptions.orientation === 'landscape'
+            ? 'max-w-[1060px]'
+            : 'max-w-[920px]'
+        }`}
+      >
+        {/* Official Sonelgaz Header with Logo — identical placement to ATTACHEMENT_OTMANI & PDFs */}
+        {docType !== 'dechets' && (
+          <div className="border-b-2 border-slate-900 pb-3 mb-5 flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <img
+                src={LOGO_URL}
+                alt="Logo Sonelgaz"
+                className="h-14 w-auto object-contain shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm sm:text-base font-bold text-cyan-700 leading-tight">
+                  الشركة الجزائرية للكهرباء والغاز-التوزيع
+                </div>
+                <div className="text-[11px] font-bold text-cyan-700 leading-tight">
                   {settings.organisme}
                 </div>
-                <div className="font-semibold text-slate-800">
-                  {settings.direction}
-                </div>
-                <div className="text-slate-600">{settings.division}</div>
-              </div>
-              <div className="text-right text-xs space-y-0.5 whitespace-nowrap">
-                <div className="font-medium">
-                  {affaire.wilaya || settings.wilayaDefaut}, le :{' '}
-                  <span className="font-mono">
-                    {docType === 'attachement' && selectedSit
-                      ? formatDateFR(selectedSit.date)
-                      : docType === 'aft'
-                        ? formatDateFR(affaire.aftDate)
-                        : docType === 'dgd'
-                          ? formatDateFR(affaire.dgdDate)
-                          : formatDateFR(affaire.dateEtude)}
+                <div className="mt-1 flex flex-wrap items-center justify-between gap-3 border-t border-cyan-200 pt-0.5 text-[10px] text-cyan-700">
+                  <span className="font-medium">{settings.direction}</span>
+                  <span className="text-slate-600 font-mono">
+                    N° : {docNumber} · Année : {docYear}
                   </span>
-                </div>
-                <div className="font-mono text-slate-600">
-                  {docType === 'aft' && affaire.aftNumero
-                    ? `N° : ${affaire.aftNumero}`
-                    : docType === 'dgd' && affaire.dgdNumero
-                      ? `N° : ${affaire.dgdNumero}`
-                      : affaire.etudeNumero
-                        ? `Étude N° : ${affaire.etudeNumero}`
-                        : ''}
                 </div>
               </div>
             </div>
 
-            {/* Document Title */}
-            <div className="my-6 text-center">
+            {docType !== 'delai' && docType !== 'pv' && (
+              <div className="text-right text-[11px] leading-snug shrink-0">
+                <div className="font-medium text-slate-900">
+                  Concession de Distribution de {wilayaLabel}
+                </div>
+                <div className="text-slate-700">{settings.division}</div>
+                <div className="mt-1 font-mono text-[10px] text-slate-600">
+                  Page : 1/1
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Generic Identification section for Devis, AFT, DGD (sans prix) */}
+        {(docType === 'devis' || docType === 'aft' || docType === 'dgd') && (
+          <>
+            <div className="my-5 text-center">
               <h2 className="text-lg font-bold tracking-wide uppercase underline underline-offset-4">
                 {docType === 'devis' && "FICHE D'ETUDE — CONSISTANCES PHYSIQUES"}
-                {docType === 'attachement' &&
-                  `FEUILLE D'ATTACHEMENT${selectedSit ? ` — N° ${selectedSit.numero}` : ''}`}
                 {docType === 'aft' && 'AVIS DE FIN DES TRAVAUX ELECTRICITE'}
                 {docType === 'dgd' && 'DECOMPTE GENERAL DEFINITIF'}
               </h2>
             </div>
 
-            {/* Section 1: Identification */}
             <div className="mb-5 text-xs space-y-1.5">
               <div className="font-bold text-sm underline mb-2">
                 1. Identification de l&apos;affaire :
@@ -241,9 +755,40 @@ export const PrintPreviewView: React.FC<PrintPreviewViewProps> = ({
           </table>
         )}
 
-        {/* FEUILLE D'ATTACHEMENT (SANS PRIX) */}
+        {/* FEUILLE D'ATTACHEMENT — Format identique ATTACHEMENT_OTMANI_8c6f7aa5.pdf & 6614_6 */}
         {docType === 'attachement' && (
           <div className="space-y-4">
+            <h2 className="text-center text-xl font-bold tracking-wide uppercase my-4">
+              FEUILLE D&apos;ATTACHEMENT
+            </h2>
+
+            <div className="text-xs space-y-1">
+              <div className="text-sm font-bold">
+                Affaire : {affaire.objet}
+              </div>
+              <div>
+                Commande ou Lettre de commande N° :{' '}
+                <span className="font-mono">
+                  {affaire.marcheNumero || '—'}
+                  {affaire.marcheDate
+                    ? ` du ${formatDateFR(affaire.marcheDate)}`
+                    : ''}
+                </span>
+              </div>
+              <div>
+                ODS N° : <span className="font-mono">{affaire.odsNumero || '—'}</span>
+              </div>
+              {(affaire.consultationNumero || affaire.pvCopeoNumero) && (
+                <div>
+                  Consultation N° : {affaire.consultationNumero || '—'} et PV COPEO N° :{' '}
+                  {affaire.pvCopeoNumero || '—'}
+                </div>
+              )}
+              <div className="pt-2 text-sm font-bold uppercase">
+                ENTREPRISE : {affaire.entreprise || '—'}
+              </div>
+            </div>
+
             {!selectedSit ? (
               <p className="text-xs text-slate-600 italic">
                 Aucune feuille d&apos;attachement enregistrée.
@@ -252,7 +797,7 @@ export const PrintPreviewView: React.FC<PrintPreviewViewProps> = ({
               <>
                 <table className="w-full border-collapse border border-slate-900 text-[11px]">
                   <thead>
-                    <tr className="bg-slate-100">
+                    <tr className="bg-slate-50 font-bold">
                       <th className="border border-slate-900 py-1.5 px-2 text-left">Chapitre</th>
                       <th className="border border-slate-900 py-1.5 px-2 text-left">Désignation</th>
                       <th className="border border-slate-900 py-1.5 px-1.5 text-center">Unité</th>
@@ -293,6 +838,44 @@ export const PrintPreviewView: React.FC<PrintPreviewViewProps> = ({
                     {selectedSit.noteSpeciale}
                   </p>
                 )}
+
+                {/* Emargement exact selon PDF */}
+                <div className="pt-10 print-avoid-break text-xs">
+                  <div className="flex items-center justify-between mb-1">
+                    <span>Emargement : (Nom et signature)</span>
+                    <span>
+                      Date : <span className="font-mono">{formatDateFR(selectedSit.date)}</span>
+                    </span>
+                  </div>
+                  <table className="w-full border-collapse border border-slate-900 text-xs">
+                    <thead>
+                      <tr>
+                        <th className="border border-slate-900 py-1.5 px-2 text-left font-normal w-1/3">
+                          Surveillant des Travaux
+                        </th>
+                        <th className="border border-slate-900 py-1.5 px-2 text-left font-normal w-1/3">
+                          Chef de Service
+                        </th>
+                        <th className="border border-slate-900 py-1.5 px-2 text-left font-normal w-1/3">
+                          Responsable de l&apos;entreprise
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="border border-slate-900 py-6 px-2 align-top">
+                          {affaire.signatories.surveillantTravaux}
+                        </td>
+                        <td className="border border-slate-900 py-6 px-2 align-top">
+                          {affaire.signatories.chefService}
+                        </td>
+                        <td className="border border-slate-900 py-6 px-2 align-top font-medium">
+                          {affaire.entreprise}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </>
             )}
           </div>
@@ -417,21 +1000,6 @@ export const PrintPreviewView: React.FC<PrintPreviewViewProps> = ({
         {/* FICHE DE DELAI D'EXECUTION — Format identique Sonelgaz */}
         {docType === 'delai' && (
           <div className="space-y-5 text-slate-950">
-            <div className="flex items-center gap-4 border-b border-slate-400 pb-3">
-              <div className="h-12 w-12 border border-slate-800 bg-slate-100 flex flex-col items-center justify-center text-[10px] font-bold leading-tight">
-                <span>سونلغاز</span>
-                <span>sonelgaz</span>
-              </div>
-              <div className="flex-1 text-center">
-                <div className="text-base font-bold text-slate-900">
-                  الشركة الجزائرية للكهرباء والغاز - التوزيع
-                </div>
-                <div className="text-xs font-medium text-slate-700">
-                  {settings.organisme}
-                </div>
-              </div>
-            </div>
-
             <h2 className="text-center text-lg font-bold tracking-wide uppercase py-1">
               FICHE DE DELAI D&apos;EXECUTION
             </h2>
@@ -565,31 +1133,8 @@ export const PrintPreviewView: React.FC<PrintPreviewViewProps> = ({
         {/* PROCES-VERBAL DE RECEPTION PROVISOIRE — Format identique pv_exemple_78294f2b.pdf */}
         {docType === 'pv' && (
           <div className="text-slate-950">
-            <div className="flex items-start justify-between gap-4 border-b-2 border-slate-900 pb-3 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="h-11 w-11 border border-slate-800 bg-slate-100 flex flex-col items-center justify-center text-[9px] font-bold leading-tight">
-                  <span>سونلغاز</span>
-                  <span>sonelgaz</span>
-                </div>
-                <div className="text-xs leading-tight">
-                  <div className="font-bold text-cyan-800">
-                    {settings.organisme}
-                  </div>
-                  <div className="text-[11px] text-cyan-700">
-                    {settings.direction}
-                  </div>
-                </div>
-              </div>
-              <div className="border border-slate-400 px-3 py-1 text-[10px] min-w-[130px]">
-                <div>N° : {affaire.pvReceptionNumero || '.....................'}</div>
-                <div>
-                  Année : {affaire.pvReceptionDate ? affaire.pvReceptionDate.slice(0, 4) : '........'}
-                </div>
-              </div>
-            </div>
-
             <div className="text-xs space-y-1 mb-6">
-              <div>Concession de Distribution de {affaire.wilaya || settings.wilayaDefaut}</div>
+              <div>Concession de Distribution de {wilayaLabel}</div>
               <div>{settings.division}</div>
               <div className="pt-1 font-bold text-sm">
                 Affaire : {affaire.objet}
@@ -660,7 +1205,7 @@ export const PrintPreviewView: React.FC<PrintPreviewViewProps> = ({
               <div>En foi de quoi, nous avons dressé le présent procés verbal.</div>
 
               <div>
-                A {affaire.wilaya ? affaire.wilaya.charAt(0).toUpperCase() + affaire.wilaya.slice(1).toLowerCase() : 'Tlemcen'}, le{' '}
+                A {wilayaLabel}, le{' '}
                 <span className="font-mono">{formatDateFR(affaire.pvReceptionDate)}</span>.
               </div>
             </div>
@@ -680,8 +1225,200 @@ export const PrintPreviewView: React.FC<PrintPreviewViewProps> = ({
           </div>
         )}
 
-        {/* Generic 5-Column Signatures Grid for Devis, Attachement, AFT, DGD */}
-        {docType !== 'delai' && docType !== 'pv' && (
+        {/* ANNEXE 1 : FICHE DE DEPOSE ET DE STOCKAGE DES DECHETS — Format identique D_charge_d10e57e8.pdf */}
+        {docType === 'dechets' && (
+          <div className="space-y-3 text-slate-950">
+            {/* Top Logo + Arabic & French Title */}
+            <div className="flex items-center gap-4 pb-2">
+              <img
+                src={LOGO_URL}
+                alt="Logo Sonelgaz"
+                className="h-12 w-auto object-contain shrink-0"
+              />
+              <div className="flex-1 text-center leading-snug">
+                <div className="text-base font-bold">
+                  الشركة الجزائرية للكهرباء والغاز-التوزيع
+                </div>
+                <div className="text-sm font-bold">
+                  Société algérienne de l&apos;électricité et du gaz – Distribution
+                </div>
+              </div>
+            </div>
+
+            <div className="text-[11px] leading-snug space-y-0.5">
+              <div>
+                Annexe 1 : Fiche de dépose et stockage des déchets (par l&apos;entreprise sous traitante)
+              </div>
+              <div>1- Electricité et Gaz</div>
+              <div className="flex items-center justify-between gap-4">
+                <span>Région de Distribution Oran</span>
+                <span className="pr-8">
+                  Date :{' '}
+                  <span className="font-mono">
+                    {affaire.dechargeDate
+                      ? formatDateFR(affaire.dechargeDate)
+                      : '...........'}
+                  </span>
+                </span>
+              </div>
+              <div>Concession/Direction de Distribution {wilayaLabel}</div>
+            </div>
+
+            <div className="text-center py-2">
+              <div className="text-sm font-bold uppercase tracking-wide">
+                FICHE DE DEPOSE ET DE STOCKAGE DES DECHETS
+              </div>
+              <div className="text-xs font-bold">
+                (par l&apos;entreprise sous traitante)
+              </div>
+            </div>
+
+            <div className="text-xs font-medium pb-1">
+              DECHARGE N°{' '}
+              <span className="font-mono px-2">
+                {affaire.dechargeNumero || '      '}
+              </span>{' '}
+              /20
+            </div>
+
+            <table className="w-full border-collapse border border-slate-950 text-[9.5px]">
+              <thead>
+                <tr className="text-center font-bold bg-white">
+                  <th className="border border-slate-950 py-1.5 px-1 w-9">N° Ordre</th>
+                  <th className="border border-slate-950 py-1.5 px-1.5 min-w-[110px]">
+                    Intitulé de l&apos;affaire
+                  </th>
+                  <th className="border border-slate-950 py-1.5 px-1">Code GDO</th>
+                  <th className="border border-slate-950 py-1.5 px-1">AP</th>
+                  <th className="border border-slate-950 py-1.5 px-1 w-16">
+                    N° date 3° tranche de commande
+                  </th>
+                  <th className="border border-slate-950 py-1.5 px-1">ETP</th>
+                  <th className="border border-slate-950 py-1.5 px-1.5 min-w-[120px]">
+                    Désignation du Matériel
+                  </th>
+                  <th className="border border-slate-950 py-1.5 px-1 w-12">
+                    Unité déposée
+                  </th>
+                  <th className="border border-slate-950 py-1.5 px-1 w-12">
+                    Unité réintégrée
+                  </th>
+                  <th className="border border-slate-950 py-1.5 px-1 w-12">
+                    Longueur ML
+                  </th>
+                  <th className="border border-slate-950 py-1.5 px-1 w-14">
+                    Longueur Poids Equivalent Kg
+                  </th>
+                  <th className="border border-slate-950 py-1.5 px-1 w-14">
+                    Poids Pesé réintégré kg
+                  </th>
+                  <th className="border border-slate-950 py-1.5 px-1 w-16">
+                    Date d&apos;entrée en stock
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({
+                  length: Math.max(4, affaire.wasteDeposits.length),
+                }).map((_, idx) => {
+                  const wd = affaire.wasteDeposits[idx];
+                  if (!wd) {
+                    return (
+                      <tr key={`empty-wd-${idx}`} className="h-9">
+                        {Array.from({ length: 13 }).map((__, colIdx) => (
+                          <td
+                            key={colIdx}
+                            className="border border-slate-950 py-1.5 px-1"
+                          >
+                            &nbsp;
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  }
+                  const commandeFallback = affaire.marcheNumero
+                    ? `${affaire.marcheNumero}${affaire.marcheDate ? ` du ${formatDateFR(affaire.marcheDate)}` : ''}`
+                    : '';
+                  return (
+                    <tr key={wd.id}>
+                      <td className="border border-slate-950 py-1.5 px-1 text-center num-cell">
+                        {idx + 1}
+                      </td>
+                      <td className="border border-slate-950 py-1.5 px-1.5">
+                        {wd.intituleAffaire ?? affaire.objet}
+                      </td>
+                      <td className="border border-slate-950 py-1.5 px-1 font-mono">
+                        {wd.codeGdo ?? affaire.numeroAffaire}
+                      </td>
+                      <td className="border border-slate-950 py-1.5 px-1 font-mono">
+                        {wd.ap ?? affaire.imputation}
+                      </td>
+                      <td className="border border-slate-950 py-1.5 px-1 font-mono">
+                        {wd.commandeRef ?? commandeFallback}
+                      </td>
+                      <td className="border border-slate-950 py-1.5 px-1">
+                        {wd.etp ?? affaire.entreprise}
+                      </td>
+                      <td className="border border-slate-950 py-1.5 px-1.5 font-medium">
+                        {wd.designation}
+                      </td>
+                      <td className="border border-slate-950 py-1.5 px-1 text-right num-cell">
+                        {wd.uniteDeposee > 0 ? formatNumber(wd.uniteDeposee, 0) : ''}
+                      </td>
+                      <td className="border border-slate-950 py-1.5 px-1 text-right num-cell">
+                        {wd.uniteReintegree > 0 ? formatNumber(wd.uniteReintegree, 0) : ''}
+                      </td>
+                      <td className="border border-slate-950 py-1.5 px-1 text-right num-cell">
+                        {wd.longueurML > 0 ? formatNumber(wd.longueurML, 0) : ''}
+                      </td>
+                      <td className="border border-slate-950 py-1.5 px-1 text-right num-cell">
+                        {(wd.poidsEquivalentKg || 0) > 0
+                          ? formatNumber(wd.poidsEquivalentKg || 0, 1)
+                          : ''}
+                      </td>
+                      <td className="border border-slate-950 py-1.5 px-1 text-right num-cell">
+                        {wd.poidsKg > 0 ? formatNumber(wd.poidsKg, 1) : ''}
+                      </td>
+                      <td className="border border-slate-950 py-1.5 px-1 text-center font-mono">
+                        {formatDateFR(wd.dateDepot)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {/* Signature block exact selon D_charge_d10e57e8.pdf */}
+            <div className="pt-10 print-avoid-break">
+              <table className="w-full border-collapse border border-slate-950 text-[10px]">
+                <tbody>
+                  <tr>
+                    <td className="border border-slate-950 px-2 pt-1.5 pb-12 align-top w-1/3">
+                      L&apos;agent chargé du stock
+                    </td>
+                    <td className="border border-slate-950 px-2 pt-1.5 pb-12 align-top w-1/3">
+                      <div>Le surveillant de travaux</div>
+                      {affaire.signatories.surveillantTravaux && (
+                        <div className="mt-2 font-medium">
+                          {affaire.signatories.surveillantTravaux}
+                        </div>
+                      )}
+                    </td>
+                    <td className="border border-slate-950 px-2 pt-1.5 pb-12 align-top w-1/3">
+                      <div>L&apos;Entreprise</div>
+                      {affaire.entreprise && (
+                        <div className="mt-2 font-medium">{affaire.entreprise}</div>
+                      )}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Generic 5-Column Signatures Grid for Devis, AFT, DGD */}
+        {(docType === 'devis' || docType === 'aft' || docType === 'dgd') && (
           <div className="mt-8 print-avoid-break">
             <table className="w-full border-collapse border border-slate-900 text-xs text-center">
               <thead>

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Printer, Trash2 } from 'lucide-react';
 import {
   Affaire,
   AffaireStatus,
@@ -14,19 +14,40 @@ import {
   formatDatePVLetters,
   formatNumber,
 } from '../utils/formatters';
+import { PrintDocType } from './PrintPreviewView';
 
 interface DossierTechniqueViewProps {
   affaire: Affaire;
   settings?: AppSettings;
   onChange: (updated: Affaire) => void;
+  onPrintDoc?: (doc: PrintDocType) => void;
 }
 
 type SubTab = 'identite' | 'delai' | 'pv' | 'materiel' | 'aft' | 'dgd';
+
+const SUBTAB_TO_PRINT_DOC: Record<SubTab, PrintDocType> = {
+  identite: 'devis',
+  delai: 'delai',
+  pv: 'pv',
+  materiel: 'dechets',
+  aft: 'aft',
+  dgd: 'dgd',
+};
+
+const SUBTAB_PRINT_LABEL: Record<SubTab, string> = {
+  identite: 'Imprimer Fiche Étude',
+  delai: 'Imprimer Fiche Délai',
+  pv: 'Imprimer PV Réception',
+  materiel: 'Imprimer Annexe 1 Déchets',
+  aft: 'Imprimer AFT',
+  dgd: 'Imprimer DGD',
+};
 
 export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
   affaire,
   settings,
   onChange,
+  onPrintDoc,
 }) => {
   const [subTab, setSubTab] = useState<SubTab>('identite');
 
@@ -71,12 +92,21 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
   };
 
   const addWasteDeposit = () => {
+    const commandeDefault = affaire.marcheNumero
+      ? `${affaire.marcheNumero}${affaire.marcheDate ? ` du ${formatDateFR(affaire.marcheDate)}` : ''}`
+      : '';
     const item: WasteDepositItem = {
       id: 'wd-' + Date.now(),
+      intituleAffaire: affaire.objet || '',
+      codeGdo: affaire.numeroAffaire || '',
+      ap: affaire.imputation || '',
+      commandeRef: commandeDefault,
+      etp: affaire.entreprise || '',
       designation: '',
       uniteDeposee: 0,
       uniteReintegree: 0,
       longueurML: 0,
+      poidsEquivalentKg: 0,
       poidsKg: 0,
       dateDepot: new Date().toISOString().slice(0, 10),
     };
@@ -108,30 +138,43 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
   return (
     <div className="space-y-5">
       {/* Segmented Sub-navigation */}
-      <div className="bg-white border border-slate-200 rounded-lg p-2 flex flex-wrap items-center gap-1">
-        {(
-          [
-            ['identite', 'Identification, ODS & Réception'],
-            ['delai', "Fiche de Délai d'Exécution"],
-            ['pv', 'PV Réception Provisoire'],
-            ['materiel', 'Contrôle Matériel & Déchets'],
-            ['aft', 'Avis de Fin des Travaux (AFT)'],
-            ['dgd', 'Décompte Général Définitif (DGD)'],
-          ] as const
-        ).map(([key, label]) => (
+      <div className="bg-white border border-slate-200 rounded-lg p-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1">
+          {(
+            [
+              ['identite', 'Identification, ODS & Réception'],
+              ['delai', "Fiche de Délai d'Exécution"],
+              ['pv', 'PV Réception Provisoire'],
+              ['materiel', 'Contrôle Matériel & Déchets'],
+              ['aft', 'Avis de Fin des Travaux (AFT)'],
+              ['dgd', 'Décompte Général Définitif (DGD)'],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSubTab(key)}
+              className={`px-3.5 py-2 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                subTab === key
+                  ? 'bg-blue-700 text-white'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {onPrintDoc && (
           <button
-            key={key}
             type="button"
-            onClick={() => setSubTab(key)}
-            className={`px-3.5 py-2 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              subTab === key
-                ? 'bg-blue-700 text-white'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
+            onClick={() => onPrintDoc(SUBTAB_TO_PRINT_DOC[subTab])}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-md whitespace-nowrap shrink-0 cursor-pointer"
           >
-            {label}
+            <Printer className="h-3.5 w-3.5" />
+            {SUBTAB_PRINT_LABEL[subTab]}
           </button>
-        ))}
+        )}
       </div>
 
       {/* 1. Identification & ODS */}
@@ -565,20 +608,29 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
         <div className="space-y-4">
           <div className="bg-white border border-slate-200 rounded-lg p-6 lg:p-10 max-w-[920px] mx-auto shadow-xs text-slate-900">
             {/* Official Header */}
-            <div className="flex items-center justify-between border-b border-slate-300 pb-3 mb-5">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 border border-slate-700 bg-slate-100 flex flex-col items-center justify-center text-[9px] font-bold leading-tight text-slate-800">
-                  <span>سونلغاز</span>
-                  <span>sonelgaz</span>
-                </div>
-                <div className="text-[11px] leading-tight text-slate-700">
-                  <div className="font-semibold">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-400 pb-3 mb-5">
+              <div className="flex items-center gap-3 flex-1">
+                <img
+                  src="/assets/aistudio/LOGO__00bdc765.jpeg"
+                  alt="Logo Sonelgaz"
+                  className="h-12 w-auto object-contain shrink-0"
+                />
+                <div className="flex-1 leading-tight">
+                  <div className="text-sm font-bold text-cyan-700">
+                    الشركة الجزائرية للكهرباء والغاز-التوزيع
+                  </div>
+                  <div className="text-[11px] font-semibold text-cyan-700">
                     {settings?.organisme || "Société algérienne de l'électricité et du gaz - Distribution"}
                   </div>
-                  <div>{settings?.direction || 'Direction de Distribution de Tlemcen'}</div>
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-4 text-[10px] text-cyan-700">
+                    <span>{settings?.direction || 'Direction de Distribution de Tlemcen'}</span>
+                    <span className="text-slate-500">
+                      N° .......... · Année {affaire.delaySheet.t0DateDebut ? affaire.delaySheet.t0DateDebut.slice(0, 4) : '........'}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <div className="text-[11px] font-mono text-slate-500">
+              <div className="text-[11px] font-mono text-slate-500 whitespace-nowrap">
                 Affaire : {affaire.numeroAffaire}
               </div>
             </div>
@@ -965,13 +1017,17 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
           <div className="bg-white border border-slate-200 rounded-lg p-8 lg:p-12 max-w-[920px] mx-auto shadow-xs text-slate-950">
             {/* Top Header */}
             <div className="flex items-start justify-between gap-4 border-b-2 border-slate-900 pb-3 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 border border-slate-700 bg-slate-100 flex flex-col items-center justify-center text-[9px] font-bold leading-tight text-slate-800">
-                  <span>سونلغاز</span>
-                  <span>sonelgaz</span>
-                </div>
-                <div className="text-xs leading-tight">
-                  <div className="font-bold text-cyan-800">
+              <div className="flex items-center gap-3 flex-1">
+                <img
+                  src="/assets/aistudio/LOGO__00bdc765.jpeg"
+                  alt="Logo Sonelgaz"
+                  className="h-12 w-auto object-contain shrink-0"
+                />
+                <div className="leading-tight">
+                  <div className="text-sm font-bold text-cyan-700">
+                    الشركة الجزائرية للكهرباء والغاز-التوزيع
+                  </div>
+                  <div className="text-xs font-bold text-cyan-700">
                     {settings?.organisme || "Société algérienne de l'électricité et du gaz - Distribution"}
                   </div>
                   <div className="text-[11px] text-cyan-700">
@@ -1238,53 +1294,167 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
             </div>
           </div>
 
-          {/* Fiche de dépose et stockage des déchets */}
+          {/* Fiche de dépose et stockage des déchets (Annexe 1 identique D_charge_d10e57e8.pdf) */}
           <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div>
                 <h2 className="text-base font-semibold text-slate-900">
-                  Fiche de Dépose et de Stockage des Déchets (Annexe 1)
+                  Annexe 1 : Fiche de Dépose et de Stockage des Déchets
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Suivi des matériaux déposés, longueurs ML et poids réintégrés en magasin.
+                  Par l&apos;entreprise sous-traitante — Décharge magasin, longueurs ML, poids équivalent et poids pesé réintégré.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={addWasteDeposit}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg cursor-pointer"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Ajouter matériel déposé
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="inline-flex items-center gap-1.5 text-xs text-slate-600">
+                  <span className="font-medium">Décharge N° :</span>
+                  <input
+                    type="text"
+                    placeholder="ex: 12/2026"
+                    value={affaire.dechargeNumero || ''}
+                    onChange={(e) =>
+                      onChange({ ...affaire, dechargeNumero: e.target.value })
+                    }
+                    className="w-28 px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-lg"
+                  />
+                </label>
+                <label className="inline-flex items-center gap-1.5 text-xs text-slate-600">
+                  <span className="font-medium">Date :</span>
+                  <input
+                    type="date"
+                    value={affaire.dechargeDate || ''}
+                    onChange={(e) =>
+                      onChange({ ...affaire, dechargeDate: e.target.value })
+                    }
+                    className="px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-lg"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={addWasteDeposit}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Ajouter matériel déposé
+                </button>
+                {onPrintDoc && (
+                  <button
+                    type="button"
+                    onClick={() => onPrintDoc('dechets')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg cursor-pointer"
+                  >
+                    <Printer className="h-3.5 w-3.5 text-blue-700" />
+                    Imprimer Annexe 1
+                  </button>
+                )}
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-600">
-                    <th className="py-2.5 px-3 min-w-[220px]">Désignation du Matériel</th>
-                    <th className="py-2.5 px-3 text-right">Unité déposée</th>
-                    <th className="py-2.5 px-3 text-right">Unité réintégrée</th>
-                    <th className="py-2.5 px-3 text-right">Longueur (ML)</th>
-                    <th className="py-2.5 px-3 text-right">Poids (kg)</th>
-                    <th className="py-2.5 px-3">Date décharge</th>
-                    <th className="py-2.5 px-3 w-12"></th>
+                    <th className="py-2.5 px-2.5 text-center w-12">N° Ordre</th>
+                    <th className="py-2.5 px-2.5 min-w-[190px]">Intitulé de l&apos;affaire</th>
+                    <th className="py-2.5 px-2.5 min-w-[110px]">Code GDO</th>
+                    <th className="py-2.5 px-2.5 min-w-[90px]">AP</th>
+                    <th className="py-2.5 px-2.5 min-w-[130px]">N° date 3° tranche / commande</th>
+                    <th className="py-2.5 px-2.5 min-w-[140px]">ETP</th>
+                    <th className="py-2.5 px-2.5 min-w-[200px]">Désignation du Matériel</th>
+                    <th className="py-2.5 px-2.5 text-right min-w-[100px]">Unité déposée</th>
+                    <th className="py-2.5 px-2.5 text-right min-w-[100px]">Unité réintégrée</th>
+                    <th className="py-2.5 px-2.5 text-right min-w-[105px]">Longueur ML</th>
+                    <th className="py-2.5 px-2.5 text-right min-w-[115px]">Poids Équiv. (Kg)</th>
+                    <th className="py-2.5 px-2.5 text-right min-w-[115px]">Poids Pesé réint. (kg)</th>
+                    <th className="py-2.5 px-2.5 min-w-[130px]">Date entrée en stock</th>
+                    <th className="py-2.5 px-2.5 w-10"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 text-xs">
                   {affaire.wasteDeposits.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={14}
                         className="py-8 text-center text-slate-500"
                       >
                         Aucun matériel déposé enregistré.
                       </td>
                     </tr>
                   ) : (
-                    affaire.wasteDeposits.map((wd) => (
+                    affaire.wasteDeposits.map((wd, idx) => (
                       <tr key={wd.id} className="hover:bg-slate-50/70">
-                        <td className="py-2 px-3">
+                        <td className="py-2 px-2.5 text-center num-cell text-slate-500 font-medium">
+                          {idx + 1}
+                        </td>
+                        <td className="py-2 px-2">
+                          <input
+                            type="text"
+                            value={wd.intituleAffaire ?? affaire.objet}
+                            onChange={(e) =>
+                              updateWasteDeposit(wd.id, {
+                                intituleAffaire: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-1 border border-slate-200 rounded"
+                          />
+                        </td>
+                        <td className="py-2 px-2">
+                          <input
+                            type="text"
+                            value={wd.codeGdo ?? affaire.numeroAffaire}
+                            placeholder="Code GDO"
+                            onChange={(e) =>
+                              updateWasteDeposit(wd.id, {
+                                codeGdo: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-1 font-mono border border-slate-200 rounded"
+                          />
+                        </td>
+                        <td className="py-2 px-2">
+                          <input
+                            type="text"
+                            value={wd.ap ?? affaire.imputation}
+                            placeholder="AP"
+                            onChange={(e) =>
+                              updateWasteDeposit(wd.id, {
+                                ap: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-1 font-mono border border-slate-200 rounded"
+                          />
+                        </td>
+                        <td className="py-2 px-2">
+                          <input
+                            type="text"
+                            value={
+                              wd.commandeRef ??
+                              (affaire.marcheNumero
+                                ? `${affaire.marcheNumero}${affaire.marcheDate ? ` du ${formatDateFR(affaire.marcheDate)}` : ''}`
+                                : '')
+                            }
+                            placeholder="N° / date"
+                            onChange={(e) =>
+                              updateWasteDeposit(wd.id, {
+                                commandeRef: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-1 font-mono border border-slate-200 rounded"
+                          />
+                        </td>
+                        <td className="py-2 px-2">
+                          <input
+                            type="text"
+                            value={wd.etp ?? affaire.entreprise}
+                            placeholder="Entreprise"
+                            onChange={(e) =>
+                              updateWasteDeposit(wd.id, {
+                                etp: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-1 border border-slate-200 rounded"
+                          />
+                        </td>
+                        <td className="py-2 px-2">
                           <input
                             type="text"
                             value={wd.designation}
@@ -1294,10 +1464,10 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                                 designation: e.target.value,
                               })
                             }
-                            className="w-full px-2 py-1 border border-slate-200 rounded"
+                            className="w-full px-2 py-1 border border-slate-200 rounded font-medium"
                           />
                         </td>
-                        <td className="py-2 px-3">
+                        <td className="py-2 px-2">
                           <input
                             type="number"
                             min="0"
@@ -1307,10 +1477,10 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                                 uniteDeposee: parseFloat(e.target.value) || 0,
                               })
                             }
-                            className="w-32 min-w-[120px] ml-auto block px-2.5 py-1.5 text-right num-cell border border-slate-200 rounded"
+                            className="w-full min-w-[96px] px-2 py-1.5 text-right num-cell border border-slate-200 rounded"
                           />
                         </td>
-                        <td className="py-2 px-3">
+                        <td className="py-2 px-2">
                           <input
                             type="number"
                             min="0"
@@ -1321,10 +1491,10 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                                   parseFloat(e.target.value) || 0,
                               })
                             }
-                            className="w-32 min-w-[120px] ml-auto block px-2.5 py-1.5 text-right num-cell border border-slate-200 rounded"
+                            className="w-full min-w-[96px] px-2 py-1.5 text-right num-cell border border-slate-200 rounded"
                           />
                         </td>
-                        <td className="py-2 px-3">
+                        <td className="py-2 px-2">
                           <input
                             type="number"
                             min="0"
@@ -1334,10 +1504,24 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                                 longueurML: parseFloat(e.target.value) || 0,
                               })
                             }
-                            className="w-32 min-w-[120px] ml-auto block px-2.5 py-1.5 text-right num-cell border border-slate-200 rounded"
+                            className="w-full min-w-[96px] px-2 py-1.5 text-right num-cell border border-slate-200 rounded"
                           />
                         </td>
-                        <td className="py-2 px-3">
+                        <td className="py-2 px-2">
+                          <input
+                            type="number"
+                            min="0"
+                            value={wd.poidsEquivalentKg ?? 0}
+                            onChange={(e) =>
+                              updateWasteDeposit(wd.id, {
+                                poidsEquivalentKg:
+                                  parseFloat(e.target.value) || 0,
+                              })
+                            }
+                            className="w-full min-w-[100px] px-2 py-1.5 text-right num-cell border border-slate-200 rounded"
+                          />
+                        </td>
+                        <td className="py-2 px-2">
                           <input
                             type="number"
                             min="0"
@@ -1347,10 +1531,10 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                                 poidsKg: parseFloat(e.target.value) || 0,
                               })
                             }
-                            className="w-32 min-w-[120px] ml-auto block px-2.5 py-1.5 text-right num-cell border border-slate-200 rounded"
+                            className="w-full min-w-[100px] px-2 py-1.5 text-right num-cell border border-slate-200 rounded"
                           />
                         </td>
-                        <td className="py-2 px-3">
+                        <td className="py-2 px-2">
                           <input
                             type="date"
                             value={wd.dateDepot}
@@ -1362,7 +1546,7 @@ export const DossierTechniqueView: React.FC<DossierTechniqueViewProps> = ({
                             className="px-2 py-1 font-mono border border-slate-200 rounded"
                           />
                         </td>
-                        <td className="py-2 px-3 text-right">
+                        <td className="py-2 px-2 text-right">
                           <button
                             type="button"
                             onClick={() => removeWasteDeposit(wd.id)}

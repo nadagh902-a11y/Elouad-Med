@@ -92,10 +92,16 @@ export interface MaterialControlItem {
 
 export interface WasteDepositItem {
   id: string;
+  intituleAffaire?: string;
+  codeGdo?: string;
+  ap?: string;
+  commandeRef?: string;
+  etp?: string;
   designation: string;
   uniteDeposee: number;
   uniteReintegree: number;
   longueurML: number;
+  poidsEquivalentKg?: number;
   poidsKg: number;
   dateDepot: string;
 }
@@ -136,6 +142,8 @@ export interface Affaire {
   pvReceptionReserves: string;
   pvDelegueNom?: string;
   pvDeleguePar?: string;
+  dechargeNumero?: string;
+  dechargeDate?: string;
   dgdNumero: string;
   dgdDate: string;
   status: AffaireStatus;
@@ -163,6 +171,13 @@ export interface CatalogItem {
   puMainOeuvre: number;
 }
 
+export interface InstallPasswordConfig {
+  salt: string;
+  hash: string;
+  iterations: number;
+  updatedAt: string;
+}
+
 export interface AppSettings {
   organisme: string;
   direction: string;
@@ -170,4 +185,5 @@ export interface AppSettings {
   wilayaDefaut: string;
   tvaDefaut: number;
   signatairesDefaut: Signatories;
+  installPassword?: InstallPasswordConfig;
 }

@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Download,
   Plus,
+  Printer,
   Search,
   Trash2,
   X,
@@ -29,6 +30,7 @@ interface ChiffrageEditorProps {
   affaire: Affaire;
   catalog: CatalogItem[];
   onChange: (updated: Affaire) => void;
+  onPrint?: () => void;
 }
 
 const CHAPTERS: WorkChapter[] = [
@@ -60,6 +62,7 @@ export const ChiffrageEditor: React.FC<ChiffrageEditorProps> = ({
   affaire,
   catalog,
   onChange,
+  onPrint,
 }) => {
   const [chapterFilter, setChapterFilter] = useState<'ALL' | WorkChapter>('ALL');
   const [showDetailedColumns, setShowDetailedColumns] = useState(true);
@@ -347,6 +350,16 @@ export const ChiffrageEditor: React.FC<ChiffrageEditorProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {onPrint && (
+            <button
+              type="button"
+              onClick={onPrint}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <Printer className="h-3.5 w-3.5 text-blue-700" />
+              Imprimer Devis
+            </button>
+          )}
           <button
             type="button"
             onClick={() => exportAffaireToCSV(affaire)}

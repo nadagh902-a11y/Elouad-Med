@@ -48,13 +48,39 @@ export function useWorkspaceStore() {
       STORAGE_KEY_CATALOG,
       INITIAL_CATALOG
     );
-    const existingKeys = new Set(
-      saved.map((c) => `${c.chapitre}::${c.designation.trim().toLowerCase()}`)
-    );
-    const missing = INITIAL_CATALOG.filter(
-      (c) => !existingKeys.has(`${c.chapitre}::${c.designation.trim().toLowerCase()}`)
-    );
-    return missing.length > 0 ? [...saved, ...missing] : saved;
+    const seenIds = new Set<string>();
+    const seenKeys = new Set<string>();
+    const cleanSaved: CatalogItem[] = [];
+
+    for (let i = 0; i < saved.length; i++) {
+      const item = saved[i];
+      const key = `${item.chapitre}::${item.designation.trim().toLowerCase()}`;
+      if (seenKeys.has(key) && seenIds.has(item.id)) {
+        continue; // exact duplicate already kept
+      }
+      let safeId = item.id || `cat-saved-${i}`;
+      if (seenIds.has(safeId)) {
+        safeId = `${safeId}-u${i}`;
+      }
+      seenIds.add(safeId);
+      seenKeys.add(key);
+      cleanSaved.push(safeId === item.id ? item : { ...item, id: safeId });
+    }
+
+    const missing: CatalogItem[] = [];
+    INITIAL_CATALOG.forEach((c, idx) => {
+      const key = `${c.chapitre}::${c.designation.trim().toLowerCase()}`;
+      if (seenKeys.has(key)) return;
+      let safeId = c.id;
+      if (seenIds.has(safeId)) {
+        safeId = `${c.id}-m${idx}`;
+      }
+      seenIds.add(safeId);
+      seenKeys.add(key);
+      missing.push(safeId === c.id ? c : { ...c, id: safeId });
+    });
+
+    return missing.length > 0 ? [...cleanSaved, ...missing] : cleanSaved;
   });
   const [settings, setSettings] = useState<AppSettings>(() =>
     loadFromStorage<AppSettings>(STORAGE_KEY_SETTINGS, DEFAULT_SETTINGS)
@@ -116,6 +142,8 @@ export function useWorkspaceStore() {
         pvReceptionReserves: 'RAS',
         pvDelegueNom: partial?.pvDelegueNom || settings.signatairesDefaut.surveillantTravaux || '',
         pvDeleguePar: partial?.pvDeleguePar || settings.signatairesDefaut.chefService || '',
+        dechargeNumero: '',
+        dechargeDate: '',
         dgdNumero: '',
         dgdDate: '',
         status: 'etude',

@@ -4,6 +4,7 @@ import {
   FileSpreadsheet,
   FolderOpen,
   Plus,
+  Printer,
   Search,
   Trash2,
   X,
@@ -339,6 +340,14 @@ export const AffaireListView: React.FC<AffaireListViewProps> = ({
                           >
                             <FolderOpen className="h-3.5 w-3.5" />
                             Ouvrir
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onOpenAffaire(aff.id, 'print')}
+                            title="Imprimer / Exporter PDF"
+                            className="p-1.5 text-blue-700 hover:text-blue-800 rounded-md hover:bg-blue-50 cursor-pointer"
+                          >
+                            <Printer className="h-4 w-4" />
                           </button>
                           <button
                             type="button"

@@ -16,7 +16,7 @@ import { AttachementEditor } from './components/AttachementEditor';
 import { CatalogView, SettingsView } from './components/CatalogSettingsView';
 import { ChiffrageEditor } from './components/ChiffrageEditor';
 import { DossierTechniqueView } from './components/DossierTechniqueView';
-import { PrintPreviewView } from './components/PrintPreviewView';
+import { PrintDocType, PrintPreviewView } from './components/PrintPreviewView';
 import {
   OfflineIndicator,
   PWAInstallButton,
@@ -49,6 +49,9 @@ export default function App() {
     null
   );
   const [activeTab, setActiveTab] = useState<AffaireTab>('chiffrage');
+  const [printDocType, setPrintDocType] = useState<PrintDocType>('attachement');
+  const [printSitId, setPrintSitId] = useState<string | undefined>(undefined);
+  const [autoPrintSignal, setAutoPrintSignal] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const selectedAffaire = useMemo(
@@ -66,6 +69,35 @@ export default function App() {
     setActiveTab(tab);
     setSection('affaires');
     setMobileMenuOpen(false);
+  };
+
+  const handleOpenPrint = (
+    doc: PrintDocType,
+    sitId?: string,
+    triggerImmediate = false
+  ) => {
+    setPrintDocType(doc);
+    if (sitId !== undefined) {
+      setPrintSitId(sitId);
+    }
+    setActiveTab('print');
+    if (triggerImmediate) {
+      setAutoPrintSignal((n) => n + 1);
+    }
+  };
+
+  const handleTopBarPrint = () => {
+    if (activeTab === 'print') {
+      setAutoPrintSignal((n) => n + 1);
+      return;
+    }
+    if (activeTab === 'chiffrage') {
+      handleOpenPrint('devis', undefined, true);
+    } else if (activeTab === 'attachement') {
+      handleOpenPrint('attachement', undefined, true);
+    } else {
+      handleOpenPrint(printDocType, undefined, true);
+    }
   };
 
   const handleBackToList = () => {
@@ -196,7 +228,13 @@ export default function App() {
         </div>
 
         <div className="p-3 border-t border-slate-200 space-y-2.5">
-          <PWAInstallButton onExportBackup={exportBackupJSON} />
+          <PWAInstallButton
+            onExportBackup={exportBackupJSON}
+            installPassword={settings.installPassword}
+            onUpdateInstallPassword={(cfg) =>
+              setSettings((prev) => ({ ...prev, installPassword: cfg }))
+            }
+          />
           <div className="px-1 text-[11px] text-slate-500 truncate">
             {settings.direction}
           </div>
@@ -254,7 +292,7 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('print')}
+                  onClick={handleTopBarPrint}
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   <Printer className="h-3.5 w-3.5" />
@@ -434,6 +472,7 @@ export default function App() {
                   affaire={selectedAffaire}
                   catalog={catalog}
                   onChange={updateAffaire}
+                  onPrint={() => handleOpenPrint('devis', undefined, true)}
                 />
               )}
 
@@ -441,6 +480,7 @@ export default function App() {
                 <AttachementEditor
                   affaire={selectedAffaire}
                   onChange={updateAffaire}
+                  onPrint={(sitId) => handleOpenPrint('attachement', sitId, true)}
                 />
               )}
 
@@ -449,6 +489,7 @@ export default function App() {
                   affaire={selectedAffaire}
                   settings={settings}
                   onChange={updateAffaire}
+                  onPrintDoc={(doc) => handleOpenPrint(doc, undefined, true)}
                 />
               )}
 
@@ -456,6 +497,10 @@ export default function App() {
                 <PrintPreviewView
                   affaire={selectedAffaire}
                   settings={settings}
+                  initialDocType={printDocType}
+                  initialSitId={printSitId}
+                  autoPrintSignal={autoPrintSignal}
+                  onDocTypeChange={setPrintDocType}
                 />
               )}
             </div>

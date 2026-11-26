@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
   Download,
+  Package,
   Plus,
   RotateCcw,
   Search,
@@ -13,6 +14,8 @@ import {
   WorkChapter,
   WorkUnit,
 } from '../types/project';
+import { downloadWindowsSetupPack } from '../utils/windowsSetupGenerator';
+import { InstallPasswordManager } from './InstallPasswordManager';
 
 interface CatalogViewProps {
   catalog: CatalogItem[];
@@ -265,6 +268,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [setupMessage, setSetupMessage] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -420,6 +424,62 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {importMessage && (
           <p className="text-xs font-medium text-blue-700">{importMessage}</p>
+        )}
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-lg p-6 space-y-4">
+        <h2 className="text-base font-semibold text-slate-900">
+          Setup d&apos;installation Windows (Icône sur le Bureau &amp; Hors ligne)
+        </h2>
+        {typeof window !== 'undefined' && window.location.protocol === 'file:' ? (
+          <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 leading-relaxed">
+            <strong>Application installée localement sur ce PC :</strong> cette copie fonctionne en mode 100% autonome hors ligne depuis votre disque dur, sans connexion Internet.
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Définissez ou modifiez votre propre mot de passe d&apos;installation, puis téléchargez le pack PC autonome contenant l&apos;assistant <strong>Setup_Chiffrage_Sonelgaz.hta</strong>, l&apos;application complète hors ligne, l&apos;icône Windows et le créateur de raccourci sur le Bureau.
+            </p>
+
+            <InstallPasswordManager
+              passwordConfig={settings.installPassword}
+              onUpdatePasswordConfig={(cfg) => {
+                setSetupMessage(null);
+                onChange({ ...settings, installPassword: cfg });
+              }}
+            />
+
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  setSetupMessage(null);
+                  await downloadWindowsSetupPack(
+                    typeof window !== 'undefined' ? window.location.origin : '',
+                    settings.installPassword
+                  );
+                  setSetupMessage(
+                    settings.installPassword
+                      ? "Setup Windows téléchargé avec votre mot de passe d'installation et l'application complète hors ligne."
+                      : "Setup Windows téléchargé sans mot de passe. Définissez un mot de passe ci-dessus puis re-téléchargez pour le verrouiller."
+                  );
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg cursor-pointer"
+              >
+                <Package className="h-4 w-4" />
+                Télécharger le Setup Windows (.zip)
+              </button>
+              {setupMessage && (
+                <p
+                  className={`text-xs font-medium ${
+                    settings.installPassword ? 'text-emerald-700' : 'text-amber-700'
+                  }`}
+                >
+                  {setupMessage}
+                </p>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>

@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Plus,
+  Printer,
   RotateCcw,
   Trash2,
 } from 'lucide-react';
@@ -17,11 +18,13 @@ import {
 interface AttachementEditorProps {
   affaire: Affaire;
   onChange: (updated: Affaire) => void;
+  onPrint?: (sitId: string) => void;
 }
 
 export const AttachementEditor: React.FC<AttachementEditorProps> = ({
   affaire,
   onChange,
+  onPrint,
 }) => {
   const [activeSitId, setActiveSitId] = useState<string>(
     affaire.attachements[0]?.id || ''
@@ -225,14 +228,26 @@ export const AttachementEditor: React.FC<AttachementEditorProps> = ({
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={createSituation}
-          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Nouvelle Feuille d&apos;Attachement
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {activeSit && onPrint && (
+            <button
+              type="button"
+              onClick={() => onPrint(activeSit.id)}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <Printer className="h-3.5 w-3.5 text-blue-700" />
+              Imprimer Attachement
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={createSituation}
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Nouvelle Feuille d&apos;Attachement
+          </button>
+        </div>
       </div>
 
       {!activeSit ? (

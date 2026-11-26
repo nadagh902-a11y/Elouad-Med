@@ -1,0 +1,30 @@
+{
+  "appId": "dz.sonelgaz.chiffrage.attachement",
+  "productName": "Chiffrage & Attachement",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "public/chiffrage.ico"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "public/chiffrage.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Chiffrage & Attachement",
+    "language": "1036"
+  }
+}
