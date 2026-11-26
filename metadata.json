@@ -1,0 +1,6 @@
+{
+  "name": "Chiffrage & Attachement — Travaux Électriques",
+  "description": "Application professionnelle de chiffrage (BPU / Devis), suivi des feuilles d'attachement, délais d'exécution, avis de fin des travaux (AFT) et décompte général définitif (DGD) pour chantiers électriques HTA/BT.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
