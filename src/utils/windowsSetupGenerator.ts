@@ -16,6 +16,8 @@ function sanitizeHttpUrl(rawUrl: string): string {
 
 function buildSetupHta(
   appUrl: string,
+  packVersionLabel: string,
+  packBuildId: number,
   passwordConfig?: InstallPasswordConfig
 ): string {
   const safeUrl = sanitizeHttpUrl(appUrl);
@@ -23,6 +25,8 @@ function buildSetupHta(
   const pwdHash = passwordConfig ? passwordConfig.hash.replace(/[^a-f0-9]/gi, '') : '';
   const pwdIters = passwordConfig ? Math.max(1, Math.floor(passwordConfig.iterations)) : 0;
   const hasPassword = Boolean(pwdSalt && pwdHash && pwdIters > 0);
+  const safeVersionLabel = packVersionLabel.replace(/[<>&"]/g, '');
+  const safeBuildId = String(Math.floor(packBuildId));
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -58,6 +62,13 @@ function buildSetupHta(
   }
   .header h1 { margin: 0; font-size: 17px; font-weight: 600; }
   .header p { margin: 4px 0 0 0; font-size: 12px; color: #dbeafe; }
+  .header-author {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #e0f2fe;
+    letter-spacing: 0.4px;
+  }
+  .header-author strong { color: #ffffff; font-weight: 600; }
   .body { flex: 1; padding: 20px 24px; background: #ffffff; font-size: 13px; line-height: 1.5; }
   .box {
     background: #f8fafc;
@@ -66,6 +77,17 @@ function buildSetupHta(
     padding: 12px 14px;
     margin-top: 12px;
     font-size: 12px;
+  }
+  .version-pill {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 4px 8px;
+    background: #e0f2fe;
+    border: 1px solid #bae6fd;
+    color: #0369a1;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
   }
   .pwd-box {
     background: #eff6ff;
@@ -114,7 +136,15 @@ function buildSetupHta(
     border-top: 1px solid #cbd5e1;
     padding: 12px 22px;
     text-align: right;
+    overflow: hidden;
   }
+  .footer-credit {
+    float: left;
+    line-height: 30px;
+    font-size: 11px;
+    color: #475569;
+  }
+  .footer-credit strong { color: #0f172a; font-weight: 600; }
   .btn {
     padding: 7px 18px;
     font-size: 12.5px;
@@ -138,6 +168,7 @@ function buildSetupHta(
   ${ES5_SHA256_SOURCE}
 
   var APP_URL = "${safeUrl}";
+  var PACK_BUILD_ID = "${safeBuildId}";
   var HAS_PASSWORD = ${hasPassword ? 'true' : 'false'};
   var PWD_SALT = "${pwdSalt}";
   var PWD_HASH = "${pwdHash}";
@@ -149,15 +180,21 @@ function buildSetupHta(
 
   function initSetup() {
     try {
-      window.resizeTo(560, 490);
+      window.resizeTo(560, 520);
       var left = Math.max(0, Math.floor((screen.availWidth - 560) / 2));
-      var top = Math.max(0, Math.floor((screen.availHeight - 490) / 2));
+      var top = Math.max(0, Math.floor((screen.availHeight - 520) / 2));
       window.moveTo(left, top);
       shell = new ActiveXObject("WScript.Shell");
       fso = new ActiveXObject("Scripting.FileSystemObject");
       var localApp = shell.ExpandEnvironmentStrings("%LocalAppData%");
       installDir = localApp + "\\\\ChiffrageSonelgaz";
       document.getElementById("installPathInput").value = installDir;
+      var srcDirCheck = getScriptFolder();
+      if (!fso.FileExists(srcDirCheck + "\\\\Chiffrage_App.html")) {
+        alert("Attention : vous avez ouvert le fichier directement dans WinRAR / ZIP sans l'extraire !\\n\\n1. Fermez cette fenetre.\\n2. Faites un clic droit sur Setup_Chiffrage_Sonelgaz_PC.zip -> Extraire tout...\\n3. Ouvrez Setup_Chiffrage_Sonelgaz.hta depuis le dossier extrait.");
+        window.close();
+        return;
+      }
       if (HAS_PASSWORD) {
         var inp = document.getElementById("installPwdInput");
         if (inp) inp.focus();
@@ -242,7 +279,7 @@ function buildSetupHta(
 
   function runInstallation() {
     showStep(3);
-    setProgress(15, "Creation du dossier d'installation...");
+    setProgress(15, "Preparation du dossier d'installation...");
 
     setTimeout(function () {
       try {
@@ -251,7 +288,21 @@ function buildSetupHta(
           fso.CreateFolder(installDir);
         }
 
-        setProgress(35, "Copie de l'icone de l'application...");
+        if (document.getElementById("chkCleanUpdate").checked) {
+          setProgress(25, "Nettoyage de l'ancien profil local...");
+          var oldProfile = installDir + "\\\\AppProfile";
+          if (fso.FolderExists(oldProfile)) {
+            try {
+              fso.DeleteFolder(oldProfile, true);
+            } catch (profileErr) {
+              alert("L'application Chiffrage & Attachement semble encore ouverte.\\n\\nFermez d'abord sa fenetre, puis cliquez a nouveau sur Installer.");
+              showStep(2);
+              return;
+            }
+          }
+        }
+
+        setProgress(38, "Copie de l'icone de l'application...");
         var srcDir = getScriptFolder();
         var srcIco = srcDir + "\\\\Chiffrage.ico";
         var dstIco = installDir + "\\\\Chiffrage.ico";
@@ -259,15 +310,19 @@ function buildSetupHta(
           fso.CopyFile(srcIco, dstIco, true);
         }
 
-        setProgress(45, "Copie de l'application autonome hors-ligne...");
+        setProgress(50, "Copie de l'application autonome hors-ligne...");
         var srcAppHtml = srcDir + "\\\\Chiffrage_App.html";
         var dstAppHtml = installDir + "\\\\Chiffrage_App.html";
         var hasLocalHtml = fso.FileExists(srcAppHtml);
         if (hasLocalHtml) {
           fso.CopyFile(srcAppHtml, dstAppHtml, true);
+        } else {
+          alert("Attention : Chiffrage_App.html est introuvable a cote de Setup_Chiffrage_Sonelgaz.hta.\\nVeuillez extraire tout le fichier ZIP avant de lancer l'installation.");
+          showStep(2);
+          return;
         }
 
-        setProgress(65, "Creation du lanceur autonome hors-ligne...");
+        setProgress(68, "Creation du lanceur autonome hors-ligne...");
         var launcherPath = installDir + "\\\\Lancer_Chiffrage.vbs";
         var vbsLines = [
           'Set sh = CreateObject("WScript.Shell")',
@@ -295,7 +350,7 @@ function buildSetupHta(
           '  End If',
           'Next',
           'If fso.FileExists(appHtml) Then',
-          '  targetUrl = "file:///" & Replace(Replace(Replace(appHtml, "\\\\", "/"), " ", "%20"), "#", "%23")',
+          '  targetUrl = "file:///" & Replace(Replace(Replace(appHtml, "\\\\", "/"), " ", "%20"), "#", "%23") & "?v=' + PACK_BUILD_ID + '"',
           '  If browserExe <> "" Then',
           '    cmd = Chr(34) & browserExe & Chr(34) & " --app=" & Chr(34) & targetUrl & Chr(34) & " --user-data-dir=" & Chr(34) & profileDir & Chr(34)',
           '    sh.Run cmd, 1, False',
@@ -319,11 +374,16 @@ function buildSetupHta(
         var uninstLines = [
           'Set sh = CreateObject("WScript.Shell")',
           'Set fso = CreateObject("Scripting.FileSystemObject")',
+          'appDir = fso.GetParentFolderName(WScript.ScriptFullName)',
           'desk = sh.SpecialFolders("Desktop") & "\\\\Chiffrage & Attachement.lnk"',
           'prog = sh.SpecialFolders("Programs") & "\\\\Chiffrage & Attachement.lnk"',
           'If fso.FileExists(desk) Then fso.DeleteFile desk, True',
           'If fso.FileExists(prog) Then fso.DeleteFile prog, True',
-          'MsgBox "Les raccourcis Chiffrage & Attachement ont ete supprimes.", 64, "Desinstallation"'
+          'On Error Resume Next',
+          'If fso.FolderExists(appDir & "\\\\AppProfile") Then fso.DeleteFolder appDir & "\\\\AppProfile", True',
+          'If fso.FileExists(appDir & "\\\\Chiffrage_App.html") Then fso.DeleteFile appDir & "\\\\Chiffrage_App.html", True',
+          'If fso.FileExists(appDir & "\\\\Lancer_Chiffrage.vbs") Then fso.DeleteFile appDir & "\\\\Lancer_Chiffrage.vbs", True',
+          'MsgBox "Ancienne version et raccourcis supprimes. Vous pouvez maintenant lancer la nouvelle installation.", 64, "Desinstallation"'
         ];
         var unFile = fso.CreateTextFile(uninstPath, true, false);
         unFile.Write(uninstLines.join("\\r\\n"));
@@ -383,12 +443,14 @@ function buildSetupHta(
   <div class="header">
     <h1>Assistant d'installation — Chiffrage &amp; Attachement</h1>
     <p>Gestion des Consistances Physiques, Attachements, Délais, AFT, PV &amp; DGD</p>
+    <div class="header-author">Conception &amp; Réalisation : <strong>ELOUAD MOHAMMED</strong></div>
   </div>
 
   <div class="body">
     <div id="step1">
       <p><strong>Bienvenue dans l'assistant d'installation sur votre PC.</strong></p>
-      <p>Cet assistant va installer l'application autonome <strong>Chiffrage &amp; Attachement</strong> (100% hors ligne) avec son icône sur votre Bureau Windows.</p>
+      <p>Cet assistant va installer la dernière version autonome de <strong>Chiffrage &amp; Attachement</strong> (100% hors ligne) avec son icône sur votre Bureau Windows.</p>
+      <div class="version-pill">Pack généré le : ${safeVersionLabel}</div>
       ${
         hasPassword
           ? `<div class="pwd-box">
@@ -398,7 +460,7 @@ function buildSetupHta(
       </div>`
           : `<div class="box">
         <strong>Fonctionnement 100% hors ligne :</strong><br />
-        L'application complète est installée directement sur votre disque dur. Elle fonctionne immédiatement sans connexion Internet et sans compte en ligne, avec impression directe sur votre imprimante.
+        L'application complète et vos dernières données sont installées directement sur votre disque dur, sans connexion Internet.
       </div>`
       }
     </div>
@@ -408,6 +470,9 @@ function buildSetupHta(
       <label class="field-label" for="installPathInput">Dossier d'installation :</label>
       <input id="installPathInput" type="text" class="path-box" />
 
+      <div class="check-row">
+        <label><input id="chkCleanUpdate" type="checkbox" checked="checked" /> Remplacer l'ancienne version et appliquer les dernières données</label>
+      </div>
       <div class="check-row">
         <label><input id="chkDesktop" type="checkbox" checked="checked" /> Créer une icône sur le Bureau Windows</label>
       </div>
@@ -426,7 +491,7 @@ function buildSetupHta(
 
     <div id="step4" class="hidden">
       <p><strong>Installation terminée !</strong></p>
-      <p>L'application autonome <strong>Chiffrage &amp; Attachement</strong> a été installée sur votre PC et son icône a été ajoutée sur votre Bureau.</p>
+      <p>La nouvelle version de <strong>Chiffrage &amp; Attachement</strong> a été installée sur votre PC et son icône a été mise à jour sur votre Bureau.</p>
       <div class="check-row">
         <label><input id="chkLaunch" type="checkbox" checked="checked" /> Lancer l'application maintenant</label>
       </div>
@@ -434,6 +499,7 @@ function buildSetupHta(
   </div>
 
   <div class="footer">
+    <span class="footer-credit">Réalisé par <strong>ELOUAD MOHAMMED</strong></span>
     <button id="btnCancel" type="button" class="btn" onclick="window.close()">Annuler</button>
     <button id="btnBack" type="button" class="btn" style="display:none" onclick="showStep(1)">&lt; Précédent</button>
     <button id="btnNext" type="button" class="btn btn-primary" onclick="handleNextFromStep1()">Suivant &gt;</button>
@@ -458,15 +524,60 @@ endlocal
 `;
 }
 
+function injectWorkspaceSnapshotIntoOfflineHtml(html: string): string {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return html;
+    }
+    const rawAffaires = localStorage.getItem('elec_chiffrage_affaires_v1');
+    const rawCatalog = localStorage.getItem('elec_chiffrage_catalog_v1');
+    const rawSettings = localStorage.getItem('elec_chiffrage_settings_v1');
+
+    const snapshot: {
+      exportedAt: number;
+      affaires?: unknown;
+      catalog?: unknown;
+      settings?: unknown;
+    } = {
+      exportedAt: Date.now(),
+    };
+
+    if (rawAffaires) snapshot.affaires = JSON.parse(rawAffaires);
+    if (rawCatalog) snapshot.catalog = JSON.parse(rawCatalog);
+    if (rawSettings) snapshot.settings = JSON.parse(rawSettings);
+
+    const safeJson = JSON.stringify(snapshot)
+      .replace(/</g, '\\u003c')
+      .replace(/\u2028/g, '\\u2028')
+      .replace(/\u2029/g, '\\u2029');
+
+    const seedScript = `<script>window.__CHIFFRAGE_EMBEDDED_SNAPSHOT__=${safeJson};</script>`;
+    const markerWithAttr = '<div id="root" data-offline-bundle="chiffrage-standalone"></div>';
+    const markerPlain = '<div id="root"></div>';
+    if (html.includes(markerWithAttr)) {
+      return html.replace(markerWithAttr, () => `${markerWithAttr}\n    ${seedScript}`);
+    }
+    if (html.includes(markerPlain)) {
+      return html.replace(markerPlain, () => `${markerPlain}\n    ${seedScript}`);
+    }
+    return html.replace('</body>', () => `${seedScript}\n  </body>`);
+  } catch {
+    return html;
+  }
+}
+
 export async function downloadWindowsSetupPack(
   appUrl: string,
   passwordConfig?: InstallPasswordConfig
 ): Promise<void> {
   const zip = new JSZip();
+  const cacheBust = Date.now();
+  const now = new Date(cacheBust);
+  const packVersionLabel = `${now.toLocaleDateString('fr-FR')} à ${now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
 
   zip.file(
     'Setup_Chiffrage_Sonelgaz.hta',
-    buildSetupHta(appUrl, passwordConfig)
+    buildSetupHta(appUrl, packVersionLabel, cacheBust, passwordConfig)
   );
   zip.file(
     'Installer_Chiffrage.bat',
@@ -477,22 +588,27 @@ export async function downloadWindowsSetupPack(
     [
       'INSTALLATION SUR PC WINDOWS — CHIFFRAGE & ATTACHEMENT (100% HORS LIGNE)',
       '========================================================================',
+      'Conception & Realisation : ELOUAD MOHAMMED',
+      `Pack genere le : ${packVersionLabel}`,
       '',
-      '1. Faites un clic droit sur ce fichier ZIP -> "Extraire tout..."',
-      '2. Ouvrez le dossier extrait et double-cliquez sur :',
+      '1. Fermez d\'abord l\'application si elle est deja ouverte sur votre PC.',
+      '2. Faites un clic droit sur ce fichier ZIP -> "Extraire tout..." dans un nouveau dossier.',
+      '3. Ouvrez le dossier extrait et double-cliquez sur :',
       '   -> Setup_Chiffrage_Sonelgaz.hta (Assistant graphique Windows)',
       '   (ou sur Installer_Chiffrage.bat)',
       passwordConfig
-        ? '3. Saisissez votre mot de passe d\'installation, puis Suivant -> Installer.'
-        : '3. Cliquez sur Suivant -> Installer -> Terminer.',
-      '4. Une icone "Chiffrage & Attachement" apparait sur votre Bureau.',
-      '5. L\'application complete (Chiffrage_App.html) est installee localement',
-      '   sur votre PC : elle fonctionne immediatement sans Internet ni compte.',
+        ? '4. Saisissez votre mot de passe d\'installation, puis Suivant -> Installer.'
+        : '4. Cliquez sur Suivant -> Installer -> Terminer.',
+      '5. Une icone "Chiffrage & Attachement" apparait sur votre Bureau.',
+      '6. L\'application complete (Chiffrage_App.html) avec vos dernieres donnees',
+      '   est installee localement : elle fonctionne sans Internet ni compte.',
     ].join('\r\n')
   );
 
   try {
-    const icoRes = await fetch('/chiffrage.ico');
+    const icoRes = await fetch(`/chiffrage.ico?v=${cacheBust}`, {
+      cache: 'no-store',
+    });
     if (icoRes.ok) {
       const icoBuf = await icoRes.arrayBuffer();
       zip.file('Chiffrage.ico', icoBuf);
@@ -501,15 +617,25 @@ export async function downloadWindowsSetupPack(
     // Fallback without ico if unreachable
   }
 
-  try {
-    const offlineRes = await fetch('/offline-chiffrage.html');
-    if (offlineRes.ok) {
-      const offlineHtml = await offlineRes.text();
-      zip.file('Chiffrage_App.html', offlineHtml);
-    }
-  } catch {
-    // Fallback to APP_URL if offline HTML cannot be fetched
+  const offlineRes = await fetch(`/offline-chiffrage.html?v=${cacheBust}`, {
+    cache: 'no-store',
+  });
+  if (!offlineRes.ok) {
+    throw new Error("Impossible de récupérer le pack hors-ligne à jour.");
   }
+  const offlineHtml = await offlineRes.text();
+  if (
+    !offlineHtml.includes('data-offline-bundle="chiffrage-standalone"') &&
+    !offlineHtml.includes('<div id="root"></div>')
+  ) {
+    throw new Error(
+      'Version en cache détectée. Actualisez la page (Ctrl+F5) puis réessayez.'
+    );
+  }
+  zip.file(
+    'Chiffrage_App.html',
+    injectWorkspaceSnapshotIntoOfflineHtml(offlineHtml)
+  );
 
   const blob = await zip.generateAsync({ type: 'blob' });
   const url = URL.createObjectURL(blob);

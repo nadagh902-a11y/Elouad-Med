@@ -1,3 +1,5 @@
+process.env.NODE_ENV = 'production';
+
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -12,6 +14,7 @@ const publicDir = path.join(rootDir, 'public');
 async function main() {
   await build({
     configFile: path.join(rootDir, 'vite.offline.config.ts'),
+    mode: 'production',
   });
 
   const files = fs.readdirSync(distOfflineDir);
@@ -55,12 +58,14 @@ async function main() {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
     <title>Chiffrage &amp; Attachement — Travaux Électriques</title>
     ${faviconTag}
     <style>${cssContent}</style>
   </head>
   <body class="bg-slate-50 text-slate-900 antialiased selection:bg-blue-100 selection:text-blue-900">
-    <div id="root"></div>
+    <div id="root" data-offline-bundle="chiffrage-standalone"></div>
     <script>${safeJsContent}</script>
   </body>
 </html>

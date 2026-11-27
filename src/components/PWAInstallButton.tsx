@@ -36,6 +36,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   const [pendingNativeInstall, setPendingNativeInstall] = useState(false);
   const [nativePwdInput, setNativePwdInput] = useState('');
   const [nativePwdError, setNativePwdError] = useState<string | null>(null);
+  const [setupIsError, setSetupIsError] = useState(false);
 
   if (isInstalled) {
     return null;
@@ -47,6 +48,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   const handleDownloadSetup = async () => {
     setDownloadingSetup(true);
     setSetupFeedback(null);
+    setSetupIsError(false);
     try {
       await downloadWindowsSetupPack(
         appUrl || 'https://ais-pre-iw632mamaleowjwlj22irh-1018009237034.europe-west2.run.app',
@@ -54,8 +56,15 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
       );
       setSetupFeedback(
         installPassword
-          ? "Pack Setup téléchargé avec votre mot de passe d'installation intégré."
-          : "Pack Setup téléchargé sans mot de passe. Définissez un mot de passe ci-dessus puis re-téléchargez pour le protéger."
+          ? "Pack Setup téléchargé avec votre mot de passe et vos dernières données."
+          : "Pack Setup téléchargé avec vos dernières données (sans mot de passe)."
+      );
+    } catch (err) {
+      setSetupIsError(true);
+      setSetupFeedback(
+        err instanceof Error
+          ? err.message
+          : 'Erreur lors de la préparation du pack. Actualisez la page (Ctrl+F5) et réessayez.'
       );
     } finally {
       setDownloadingSetup(false);
@@ -125,9 +134,17 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-xl overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">
-              <h3 className="text-base font-semibold text-slate-900">
-                Installer l&apos;application sur votre PC (Hors ligne)
-              </h3>
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">
+                  Installer l&apos;application sur votre PC (Hors ligne)
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Conception &amp; Réalisation :{' '}
+                  <span className="font-semibold text-slate-700">
+                    ELOUAD MOHAMMED
+                  </span>
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -229,7 +246,11 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                     {setupFeedback && (
                       <p
                         className={`text-[11px] font-medium ${
-                          installPassword ? 'text-emerald-800' : 'text-amber-800'
+                          setupIsError
+                            ? 'text-red-700'
+                            : installPassword
+                              ? 'text-emerald-800'
+                              : 'text-amber-800'
                         }`}
                       >
                         {setupFeedback}

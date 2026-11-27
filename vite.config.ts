@@ -57,6 +57,8 @@ export default defineConfig(() => {
           globPatterns: [
             '**/*.{js,css,html,ico,png,svg,jpeg,jpg,webp,woff,woff2}',
           ],
+          globIgnores: ['offline-chiffrage.html'],
+          navigateFallbackDenylist: [/\/offline-chiffrage\.html/],
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
           cleanupOutdatedCaches: true,
           clientsClaim: true,
@@ -98,6 +100,65 @@ export default defineConfig(() => {
           navigateFallback: 'index.html',
         },
       }),
+      {
+        name: 'serve-fresh-offline-html',
+        apply: 'serve',
+        configureServer(server) {
+          const getLatestMtimeMs = (dir: string): number => {
+            if (!fs.existsSync(dir)) return 0;
+            let latest = 0;
+            for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                latest = Math.max(latest, getLatestMtimeMs(full));
+              } else {
+                latest = Math.max(latest, fs.statSync(full).mtimeMs);
+              }
+            }
+            return latest;
+          };
+
+          server.middlewares.use('/offline-chiffrage.html', async (req, res, next) => {
+            if (req.method !== 'GET' && req.method !== 'HEAD') {
+              return next();
+            }
+            try {
+              const offlineHtmlPath = path.resolve(
+                __dirname,
+                'public/offline-chiffrage.html',
+              );
+              const srcLatest = getLatestMtimeMs(path.resolve(__dirname, 'src'));
+              const outMtime = fs.existsSync(offlineHtmlPath)
+                ? fs.statSync(offlineHtmlPath).mtimeMs
+                : 0;
+
+              if (!fs.existsSync(offlineHtmlPath) || srcLatest > outMtime) {
+                const {execFileSync} = await import('child_process');
+                execFileSync(
+                  process.execPath,
+                  [path.resolve(__dirname, 'scripts/build-offline.mjs')],
+                  {
+                    cwd: __dirname,
+                    stdio: 'inherit',
+                    env: {...process.env, NODE_ENV: 'production'},
+                  },
+                );
+              }
+
+              const html = fs.readFileSync(offlineHtmlPath, 'utf8');
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'text/html; charset=utf-8');
+              res.setHeader(
+                'Cache-Control',
+                'no-store, no-cache, must-revalidate, proxy-revalidate',
+              );
+              res.end(req.method === 'HEAD' ? undefined : html);
+            } catch (err) {
+              next(err);
+            }
+          });
+        },
+      },
       // Copies src/assets into dist/ so root-relative URLs like
       // "/src/assets/images/..." (e.g. generate_image output) still resolve
       // in production builds. Do not remove.

@@ -6,10 +6,80 @@ import {
 } from '../data/seedData';
 import { Affaire, AppSettings, CatalogItem } from '../types/project';
 
-const STORAGE_KEY_AFFAIRES = 'elec_chiffrage_affaires_v1';
-const STORAGE_KEY_CATALOG = 'elec_chiffrage_catalog_v1';
-const STORAGE_KEY_SETTINGS = 'elec_chiffrage_settings_v1';
+export const STORAGE_KEY_AFFAIRES = 'elec_chiffrage_affaires_v1';
+export const STORAGE_KEY_CATALOG = 'elec_chiffrage_catalog_v1';
+export const STORAGE_KEY_SETTINGS = 'elec_chiffrage_settings_v1';
 const STORAGE_KEY_SEED_PV = 'elec_chiffrage_seed_pv_v1';
+export const STORAGE_KEY_USER_EDITED_AT = 'elec_chiffrage_user_edited_at_v1';
+const STORAGE_KEY_SNAPSHOT_APPLIED_AT = 'elec_chiffrage_snapshot_applied_at_v1';
+
+interface EmbeddedWorkspaceSnapshot {
+  exportedAt: number;
+  affaires?: Affaire[];
+  catalog?: CatalogItem[];
+  settings?: AppSettings;
+}
+
+declare global {
+  interface Window {
+    __CHIFFRAGE_EMBEDDED_SNAPSHOT__?: EmbeddedWorkspaceSnapshot;
+  }
+}
+
+function applyEmbeddedSnapshotIfNeeded(): void {
+  try {
+    if (typeof window === 'undefined') return;
+    const snap = window.__CHIFFRAGE_EMBEDDED_SNAPSHOT__;
+    if (!snap || typeof snap.exportedAt !== 'number') return;
+
+    const appliedAt = Number(
+      localStorage.getItem(STORAGE_KEY_SNAPSHOT_APPLIED_AT) || '0'
+    );
+    if (appliedAt === snap.exportedAt) return;
+
+    const hasAffaires = Boolean(localStorage.getItem(STORAGE_KEY_AFFAIRES));
+    const localEditedAt = Number(
+      localStorage.getItem(STORAGE_KEY_USER_EDITED_AT) || '0'
+    );
+
+    // Apply snapshot on fresh install OR when the exported snapshot is newer than any offline edits
+    if (!hasAffaires || !localEditedAt || snap.exportedAt > localEditedAt) {
+      if (Array.isArray(snap.affaires)) {
+        localStorage.setItem(
+          STORAGE_KEY_AFFAIRES,
+          JSON.stringify(snap.affaires)
+        );
+      }
+      if (Array.isArray(snap.catalog)) {
+        localStorage.setItem(STORAGE_KEY_CATALOG, JSON.stringify(snap.catalog));
+      }
+      if (snap.settings) {
+        localStorage.setItem(
+          STORAGE_KEY_SETTINGS,
+          JSON.stringify(snap.settings)
+        );
+      }
+      localStorage.setItem(STORAGE_KEY_SEED_PV, '1');
+      localStorage.setItem(STORAGE_KEY_USER_EDITED_AT, String(snap.exportedAt));
+    }
+    localStorage.setItem(
+      STORAGE_KEY_SNAPSHOT_APPLIED_AT,
+      String(snap.exportedAt)
+    );
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function markUserEdited(): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_USER_EDITED_AT, String(Date.now()));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+applyEmbeddedSnapshotIfNeeded();
 
 function loadFromStorage<T>(key: string, fallback: T): T {
   try {
@@ -82,8 +152,16 @@ export function useWorkspaceStore() {
 
     return missing.length > 0 ? [...cleanSaved, ...missing] : cleanSaved;
   });
-  const [settings, setSettings] = useState<AppSettings>(() =>
+  const [settings, setSettingsState] = useState<AppSettings>(() =>
     loadFromStorage<AppSettings>(STORAGE_KEY_SETTINGS, DEFAULT_SETTINGS)
+  );
+
+  const setSettings = useCallback(
+    (updater: React.SetStateAction<AppSettings>) => {
+      markUserEdited();
+      setSettingsState(updater);
+    },
+    []
   );
 
   useEffect(() => {
@@ -112,6 +190,7 @@ export function useWorkspaceStore() {
 
   const createAffaire = useCallback(
     (partial?: Partial<Affaire>): Affaire => {
+      markUserEdited();
       const id = 'aff-' + Date.now();
       const today = new Date().toISOString().slice(0, 10);
       const newAffaire: Affaire = {
@@ -191,6 +270,7 @@ export function useWorkspaceStore() {
   );
 
   const duplicateAffaire = useCallback((source: Affaire): Affaire => {
+    markUserEdited();
     const id = 'aff-' + Date.now();
     const copy: Affaire = {
       ...JSON.parse(JSON.stringify(source)),
@@ -205,6 +285,7 @@ export function useWorkspaceStore() {
   }, []);
 
   const updateAffaire = useCallback((updated: Affaire) => {
+    markUserEdited();
     setAffaires((prev) =>
       prev.map((a) =>
         a.id === updated.id
@@ -215,10 +296,12 @@ export function useWorkspaceStore() {
   }, []);
 
   const deleteAffaire = useCallback((id: string) => {
+    markUserEdited();
     setAffaires((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
   const upsertCatalogItem = useCallback((item: CatalogItem) => {
+    markUserEdited();
     setCatalog((prev) => {
       const exists = prev.some((c) => c.id === item.id);
       if (exists) {
@@ -229,6 +312,7 @@ export function useWorkspaceStore() {
   }, []);
 
   const deleteCatalogItem = useCallback((id: string) => {
+    markUserEdited();
     setCatalog((prev) => prev.filter((c) => c.id !== id));
   }, []);
 
@@ -253,23 +337,28 @@ export function useWorkspaceStore() {
     URL.revokeObjectURL(url);
   }, [affaires, catalog, settings]);
 
-  const importBackupJSON = useCallback((jsonText: string): boolean => {
-    try {
-      const parsed = JSON.parse(jsonText);
-      if (Array.isArray(parsed.affaires)) setAffaires(parsed.affaires);
-      if (Array.isArray(parsed.catalog)) setCatalog(parsed.catalog);
-      if (parsed.settings) setSettings(parsed.settings);
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
+  const importBackupJSON = useCallback(
+    (jsonText: string): boolean => {
+      try {
+        const parsed = JSON.parse(jsonText);
+        markUserEdited();
+        if (Array.isArray(parsed.affaires)) setAffaires(parsed.affaires);
+        if (Array.isArray(parsed.catalog)) setCatalog(parsed.catalog);
+        if (parsed.settings) setSettings(parsed.settings);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [setSettings]
+  );
 
   const resetDemoData = useCallback(() => {
+    markUserEdited();
     setAffaires(INITIAL_AFFAIRES);
     setCatalog(INITIAL_CATALOG);
     setSettings(DEFAULT_SETTINGS);
-  }, []);
+  }, [setSettings]);
 
   return {
     affaires,

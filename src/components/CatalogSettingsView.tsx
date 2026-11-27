@@ -454,15 +454,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 type="button"
                 onClick={async () => {
                   setSetupMessage(null);
-                  await downloadWindowsSetupPack(
-                    typeof window !== 'undefined' ? window.location.origin : '',
-                    settings.installPassword
-                  );
-                  setSetupMessage(
-                    settings.installPassword
-                      ? "Setup Windows téléchargé avec votre mot de passe d'installation et l'application complète hors ligne."
-                      : "Setup Windows téléchargé sans mot de passe. Définissez un mot de passe ci-dessus puis re-téléchargez pour le verrouiller."
-                  );
+                  try {
+                    await downloadWindowsSetupPack(
+                      typeof window !== 'undefined' ? window.location.origin : '',
+                      settings.installPassword
+                    );
+                    setSetupMessage(
+                      settings.installPassword
+                        ? "Setup Windows téléchargé avec votre mot de passe, la dernière version et vos données."
+                        : "Setup Windows téléchargé avec la dernière version et vos données (sans mot de passe)."
+                    );
+                  } catch (err) {
+                    setSetupMessage(
+                      err instanceof Error
+                        ? err.message
+                        : 'Erreur lors de la préparation. Actualisez la page (Ctrl+F5) et réessayez.'
+                    );
+                  }
                 }}
                 className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg cursor-pointer"
               >

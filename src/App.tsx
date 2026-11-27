@@ -238,6 +238,14 @@ export default function App() {
           <div className="px-1 text-[11px] text-slate-500 truncate">
             {settings.direction}
           </div>
+          <div className="px-1 pt-2 border-t border-slate-100">
+            <div className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+              Réalisé par
+            </div>
+            <div className="text-xs font-semibold tracking-wide text-slate-700">
+              ELOUAD MOHAMMED
+            </div>
+          </div>
         </div>
       </aside>
 
@@ -507,6 +515,16 @@ export default function App() {
             </div>
           )}
         </main>
+
+        <footer className="no-print px-4 lg:px-8 py-3 border-t border-slate-200/80 bg-white/70 text-[11px] text-slate-500 flex flex-wrap items-center justify-between gap-2">
+          <span>Chiffrage &amp; Attachement — Travaux Électriques</span>
+          <span>
+            Conception &amp; Réalisation :{' '}
+            <strong className="font-semibold text-slate-700">
+              ELOUAD MOHAMMED
+            </strong>
+          </span>
+        </footer>
       </div>
     </div>
   );
